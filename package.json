@@ -3,7 +3,8 @@
   "private": true,
   "description": "moniqr.com: personal hub, executive assistant and agent service",
   "workspaces": [
-    "services/agents"
+    "services/agents",
+    "apps/hub"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",

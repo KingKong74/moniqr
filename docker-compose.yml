@@ -1,5 +1,6 @@
-# Agent service for Dokploy. Create a Compose app pointing at this repo, set the
-# variables from .env.example in Dokploy's Environment tab, and give agents-api a domain.
+# moniqr.com on Dokploy: the hub and the agent service. Create a Compose app pointing at this
+# repo, set the variables from .env.example in Dokploy's Environment tab, and give hub the
+# domains moniqr.com and www.moniqr.com. Nothing else is published; only the hub talks to agents-api.
 
 services:
   postgres:
@@ -56,6 +57,29 @@ services:
       RUN_TIMEOUT_MS: ${RUN_TIMEOUT_MS:-600000}
     # One run at a time on an 8GB mini PC.
     mem_limit: 1536m
+
+  hub:
+    build:
+      context: .
+      dockerfile: apps/hub/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      agents-api:
+        condition: service_healthy
+    environment:
+      AGENTS_API_URL: http://agents-api:8080
+      API_TOKEN: ${API_TOKEN}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:?set CF_ACCESS_TEAM_DOMAIN}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:?set CF_ACCESS_AUD}
+      HUB_ALLOWED_EMAILS: ${HUB_ALLOWED_EMAILS:?set HUB_ALLOWED_EMAILS}
+      PORT: 3000
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   agents-pg:

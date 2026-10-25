@@ -6,7 +6,7 @@ Everything that runs on moniqr.com.
 | --- | --- | --- |
 | `services/agents` | Agent service: API, scheduler, runner and MCP server. Runs the Executive Assistant now and the rest of the agent hierarchy later. | Phase 1 |
 | `agents/ea` | The Executive Assistant's instructions (`CLAUDE.md`). The runner starts Claude Code in this folder. | Phase 1 |
-| `apps/hub` | The hub and EA homepage at the root of moniqr.com, behind one shared login. Serves a holding page until then. | Phase 2 |
+| `apps/hub` | The hub and EA homepage at the root of moniqr.com, behind Cloudflare Access. | Phase 2 |
 | `apps/finance` | The budgeting app, moving to finance.moniqr.com. | Later |
 
 The design spec lives in Claude Docs: "Executive Assistant — Design Spec".
@@ -47,16 +47,10 @@ The runner tests use stand-ins for Claude Code in `services/agents/test/fixtures
 
 ## First real run
 
-After deploying, queue a plumbing test and watch the runner's logs:
-
-```sh
-curl -X POST https://<agents-api domain>/agents/ea/run \
-  -H "Authorization: Bearer $API_TOKEN" -H 'content-type: application/json' -d '{"kind":"test"}'
-curl https://<agents-api domain>/briefs/latest -H "Authorization: Bearer $API_TOKEN"
-```
+After deploying, open moniqr.com and press *Plumbing test*. The page refreshes until the run finishes, then shows the test brief. The runner's logs in Dokploy show what Claude Code did.
 
 Both schedules ship disabled. They get switched on in phase 3, once the EA has calendar tools.
 
 ## Deploying on Dokploy
 
-`docker-compose.yml` defines three services: `postgres`, `agents-api` and `agents-runner`. Create a Compose app in Dokploy pointing at this repo, set the variables from `.env.example`, and deploy. Only `agents-api` needs a domain, and only the hub talks to it.
+`docker-compose.yml` defines four services: `postgres`, `agents-api`, `agents-runner` and `hub`. Create a Compose app in Dokploy pointing at this repo, set the variables from `.env.example`, and deploy. Only `hub` gets domains (`moniqr.com` and `www.moniqr.com`); `agents-api` stays on the compose network.
