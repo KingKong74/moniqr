@@ -6,7 +6,7 @@ Everything that runs on moniqr.com.
 | --- | --- | --- |
 | `services/agents` | Agent service: API, scheduler, runner and MCP server. Runs the Executive Assistant now and the rest of the agent hierarchy later. | Phase 1 |
 | `agents/ea` | The Executive Assistant's instructions (`CLAUDE.md`). The runner starts Claude Code in this folder. | Phase 1 |
-| `apps/hub` | The hub and EA homepage at the root of moniqr.com, behind one shared login. | Phase 2 |
+| `apps/hub` | The hub and EA homepage at the root of moniqr.com, behind one shared login. Serves a holding page until then. | Phase 2 |
 | `apps/finance` | The budgeting app, moving to finance.moniqr.com. | Later |
 
 The design spec lives in Claude Docs: "Executive Assistant — Design Spec".
