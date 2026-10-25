@@ -16,7 +16,7 @@ export interface RunSummary {
   agent: string;
   trigger: string;
   kind: string;
-  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  status: 'queued' | 'running' | 'done' | 'failed';
   queued_at: string;
   finished_at: string | null;
   duration_ms: number | null;

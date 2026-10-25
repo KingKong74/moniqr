@@ -127,7 +127,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 ul.runs, ul.links { list-style: none; padding: 0; margin: 0; }
 .run { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 0.9375rem; }
 .status { font-size: 0.8125rem; font-weight: 600; min-width: 72px; }
-.status.succeeded { color: var(--ok); } .status.failed { color: var(--bad); }
+.status.done { color: var(--ok); } .status.failed { color: var(--bad); }
 .status.queued, .status.running { color: var(--wait); }
 .error { flex-basis: 100%; color: var(--bad); font-size: 0.875rem; }
 ul.links li { padding: 6px 0; }

@@ -19,7 +19,7 @@ const agents: AgentsClient = {
   recentRuns: async () => {
     if (failAgents) throw new Error('down');
     return [
-      { id: 1, agent: 'ea', trigger: 'manual', kind: 'test', status: 'succeeded', queued_at: '2026-10-26T20:29:00Z', finished_at: null, duration_ms: 1000, error: null },
+      { id: 1, agent: 'ea', trigger: 'manual', kind: 'test', status: 'done', queued_at: '2026-10-26T20:29:00Z', finished_at: null, duration_ms: 1000, error: null },
     ];
   },
   queueRun: async (kind) => {
