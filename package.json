@@ -1,0 +1,16 @@
+{
+  "name": "moniqr",
+  "private": true,
+  "description": "moniqr.com: personal hub, executive assistant and agent service",
+  "workspaces": [
+    "services/agents"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,61 @@
+# Agent service for Dokploy. Create a Compose app pointing at this repo, set the
+# variables from .env.example in Dokploy's Environment tab, and give agents-api a domain.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agents
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: agents
+    volumes:
+      - agents-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agents"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  agents-api:
+    build:
+      context: .
+      dockerfile: services/agents/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://agents:${POSTGRES_PASSWORD}@postgres:5432/agents
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN}
+      PORT: 8080
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  agents-runner:
+    build:
+      context: .
+      dockerfile: services/agents/Dockerfile
+    restart: unless-stopped
+    command: ["node", "services/agents/dist/runner/main.js"]
+    depends_on:
+      agents-api:
+        condition: service_healthy
+    environment:
+      # Talks to the API over the compose network; no database credentials here.
+      AGENTS_API_URL: http://agents-api:8080
+      RUNNER_TOKEN: ${RUNNER_TOKEN}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-}
+      RUN_TIMEOUT_MS: ${RUN_TIMEOUT_MS:-600000}
+    # One run at a time on an 8GB mini PC.
+    mem_limit: 1536m
+
+volumes:
+  agents-pg:
