@@ -55,6 +55,10 @@ services:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-}
       RUN_TIMEOUT_MS: ${RUN_TIMEOUT_MS:-600000}
+      # Read-only Google Calendar. Leave all three blank to run without calendar tools.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN:-}
     # One run at a time on an 8GB mini PC.
     mem_limit: 1536m
 

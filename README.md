@@ -49,7 +49,19 @@ The runner tests use stand-ins for Claude Code in `services/agents/test/fixtures
 
 After deploying, open moniqr.com and press *Plumbing test*. The page refreshes until the run finishes, then shows the test brief. The runner's logs in Dokploy show what Claude Code did.
 
-Both schedules ship disabled. They get switched on in phase 3, once the EA has calendar tools.
+Both schedules ship disabled. Switch one on (or change its time) from the agent API, for example the 6:30am morning brief:
+
+```sh
+curl -X PATCH .../schedules/1 -H "Authorization: Bearer $API_TOKEN" -H 'content-type: application/json' -d '{"enabled":true}'
+```
+
+## Google Calendar
+
+The EA reads calendars with one refresh token limited to `calendar.readonly`. The token stays in the runner's environment and is passed only to the agent MCP server, never to Claude Code itself.
+
+1. In Google Cloud, create a project, enable the Google Calendar API, set up the OAuth consent screen and **publish it to production** (in Testing, refresh tokens expire after 7 days). Then create an OAuth client of type *Desktop app*.
+2. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `~/.config/moniqr/ops.env`, then run `npm run google-auth -w services/agents` and follow the link. It saves `GOOGLE_REFRESH_TOKEN` to the same file without printing it.
+3. Copy all three into the Dokploy environment and redeploy.
 
 ## Deploying on Dokploy
 

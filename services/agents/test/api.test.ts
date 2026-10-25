@@ -108,4 +108,18 @@ describe('agent API', { skip: skipReason }, () => {
     assert.ok(runs.body.runs[0].id > runs.body.runs[1].id);
     assert.equal((await api.call('GET', '/runs?limit=500', API_TOKEN)).status, 400);
   });
+
+  test('schedules can be switched on and retimed by the hub only, and never fire straight away', async () => {
+    const [morning] = (await api.call('GET', '/schedules', API_TOKEN)).body.schedules;
+    assert.equal((await api.call('PATCH', `/schedules/${morning.id}`, RUNNER_TOKEN, { enabled: true })).status, 401);
+    assert.equal((await api.call('PATCH', `/schedules/${morning.id}`, API_TOKEN, { cron: 'every morning' })).status, 400);
+    assert.equal((await api.call('PATCH', `/schedules/${morning.id}`, API_TOKEN, {})).status, 400);
+    assert.equal((await api.call('PATCH', '/schedules/9999', API_TOKEN, { enabled: true })).status, 404);
+
+    const res = await api.call('PATCH', `/schedules/${morning.id}`, API_TOKEN, { enabled: true, cron: '0 6 * * *' });
+    assert.equal(res.status, 200);
+    assert.deepEqual([res.body.schedule.enabled, res.body.schedule.cron], [true, '0 6 * * *']);
+    const row = (await pool.query('SELECT next_run_at FROM schedules WHERE id = $1', [morning.id])).rows[0];
+    assert.equal(row.next_run_at, null, 'the scheduler picks the next slot rather than firing now');
+  });
 });

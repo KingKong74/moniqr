@@ -1,3 +1,5 @@
+import { googleCredentialsFromEnv } from './google.js';
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set`);
@@ -35,5 +37,6 @@ export function runnerConfig() {
     runTimeoutMs: runTimeoutMs(),
     claudeBin: process.env.CLAUDE_BIN ?? 'claude',
     model: process.env.CLAUDE_MODEL,
+    google: googleCredentialsFromEnv(),
   };
 }

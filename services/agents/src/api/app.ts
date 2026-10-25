@@ -10,7 +10,17 @@ import {
   queueRun,
   writeBrief,
 } from '../runs.js';
+import { nextFireAfter } from '../scheduler.js';
 import { bearer, safeEqual } from '../tokens.js';
+
+function isValidCron(cron: string): boolean {
+  try {
+    nextFireAfter(cron, 'Australia/Brisbane', new Date());
+    return cron.trim().split(/\s+/).length === 5;
+  } catch {
+    return false;
+  }
+}
 
 export const RUN_KINDS = ['morning_brief', 'weekly_lookahead', 'test'] as const;
 
@@ -105,6 +115,28 @@ export function createApp(opts: AppOptions) {
        FROM schedules s JOIN agents a ON a.id = s.agent_id ORDER BY s.id`,
     );
     res.json({ schedules: rows });
+  });
+
+  app.patch('/schedules/:id', hub, async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const body = z
+      .object({
+        enabled: z.boolean().optional(),
+        cron: z
+          .string()
+          .refine((c) => isValidCron(c), 'Not a valid cron expression')
+          .optional(),
+      })
+      .refine((b) => b.enabled !== undefined || b.cron !== undefined, 'Send enabled, cron or both')
+      .parse(req.body ?? {});
+    // Clearing next_run_at lets the scheduler pick the next slot, so a change never fires a run straight away.
+    const { rows } = await pool.query(
+      `UPDATE schedules SET enabled = coalesce($2, enabled), cron = coalesce($3, cron), next_run_at = NULL
+       WHERE id = $1 RETURNING id, kind, cron, timezone, enabled`,
+      [id, body.enabled ?? null, body.cron ?? null],
+    );
+    if (!rows[0]) throw new NotFoundError(`Schedule ${id} not found`);
+    res.json({ schedule: rows[0] });
   });
 
   // --- Runner: claim and finish runs ---

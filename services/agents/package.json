@@ -9,7 +9,8 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "runner": "tsx src/runner/main.ts",
-    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
+    "google-auth": "tsx src/google-auth.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

@@ -26,6 +26,7 @@ async function runOnce(): Promise<boolean> {
     claudeBin: config.claudeBin,
     model: config.model,
     timeoutMs: config.runTimeoutMs,
+    google: config.google,
   });
   const finish = await api(`/runner/runs/${claimed.run.id}/finish`, outcome);
   const finished = finish.ok ? ((await finish.json()) as { run: { status: string; error: string | null } }).run : null;
@@ -50,5 +51,8 @@ async function loop() {
 
 process.on('SIGTERM', () => (stopping = true));
 process.on('SIGINT', () => (stopping = true));
-console.log(`[runner] polling ${config.apiUrl} every ${config.pollIntervalMs / 1000}s`);
+console.log(
+  `[runner] polling ${config.apiUrl} every ${config.pollIntervalMs / 1000}s; ` +
+    `Google Calendar ${config.google ? 'connected' : 'not connected'}`,
+);
 await loop();

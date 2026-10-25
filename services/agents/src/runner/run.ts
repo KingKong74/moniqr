@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { GoogleCredentials } from '../google.js';
 import type { ClaimedRun } from '../runs.js';
 
 /** Repo root, where `agents/<slug>/CLAUDE.md` lives. Overridable for Docker. */
@@ -27,16 +28,43 @@ const brisbaneNow = (now: Date) =>
     minute: '2-digit',
   }).format(now);
 
-export function buildPrompt(claimed: ClaimedRun, now = new Date()): string {
-  const when = `It is ${brisbaneNow(now)} in Brisbane. This is run ${claimed.run.id}.`;
+/** YYYY-MM-DD in Brisbane, for tool arguments. */
+const brisbaneDate = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Brisbane' }).format(d);
+
+/** Which data sources this run has tools for. */
+export interface Sources {
+  calendar: boolean;
+}
+
+export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sources = { calendar: false }): string {
+  const today = brisbaneDate(now);
+  const when = `It is ${brisbaneNow(now)} in Brisbane (${today}). This is run ${claimed.run.id}.`;
   const noData =
     'No calendar, email or finance tools are connected yet, so do not invent any commitments, bills or figures. ' +
     'Say plainly which sections are waiting on which data source.';
+  const notYet =
+    'Gmail and the finance sheet are not connected yet, so do not invent bills, replies or figures; ' +
+    'say so in one line at the end of the brief.';
   switch (claimed.run.kind) {
     case 'morning_brief':
-      return `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ${noData}`;
+      if (!sources.calendar) return `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ${noData}`;
+      return (
+        `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ` +
+        `Call get_events with from ${today} and days 2 to see today and tomorrow. ` +
+        'Cover today in time order (work, Woolworths shifts, study, everything else), any clashes or overlaps, ' +
+        "tight gaps between commitments in different places, and anything early tomorrow he should prepare for tonight. " +
+        `If today is empty, say so in one line. ${notYet}`
+      );
     case 'weekly_lookahead':
-      return `${when}\n\nWrite Bailey's weekly look-ahead for the coming week and save it with write_brief. ${noData}`;
+      if (!sources.calendar) {
+        return `${when}\n\nWrite Bailey's weekly look-ahead for the coming week and save it with write_brief. ${noData}`;
+      }
+      return (
+        `${when}\n\nWrite Bailey's weekly look-ahead and save it with write_brief. ` +
+        `Call get_events with from ${brisbaneDate(new Date(now.getTime() + 86_400_000))} and days 7. ` +
+        'Give the shape of the week: busiest days, clashes, shifts, deadlines and free evenings for study. ' +
+        notYet
+      );
     case 'test':
       return `${when}\n\nThis is a plumbing test. Call write_brief once with a two-line brief confirming the run works, mentioning the run number and the time.`;
     default:
@@ -44,11 +72,20 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date()): string {
   }
 }
 
+/** The MCP tools a run may call. Calendar tools only when Google is connected. */
+export function allowedTools(sources: Sources): string[] {
+  const tools = ['mcp__agents__write_brief'];
+  if (sources.calendar) tools.push('mcp__agents__list_calendars', 'mcp__agents__get_events');
+  return tools;
+}
+
 export interface RunOptions {
   apiUrl: string;
   claudeBin: string;
   model?: string;
   timeoutMs: number;
+  /** Read-only Google credentials for the MCP server's calendar tools. */
+  google?: GoogleCredentials | null;
 }
 
 export interface RunOutcome {
@@ -58,7 +95,12 @@ export interface RunOutcome {
 }
 
 /** Arguments for a locked-down headless Claude Code session. */
-export function claudeArgs(prompt: string, mcpConfig: object, model?: string): string[] {
+export function claudeArgs(
+  prompt: string,
+  mcpConfig: object,
+  model?: string,
+  tools: string[] = allowedTools({ calendar: false }),
+): string[] {
   const args = [
     '-p',
     prompt,
@@ -73,7 +115,7 @@ export function claudeArgs(prompt: string, mcpConfig: object, model?: string): s
     JSON.stringify(mcpConfig),
     '--strict-mcp-config',
     '--allowedTools',
-    'mcp__agents__write_brief',
+    tools.join(','),
     '--permission-mode',
     'dontAsk',
   ];
@@ -91,18 +133,32 @@ function claudeEnv(): NodeJS.ProcessEnv {
 
 export async function executeRun(claimed: ClaimedRun, opts: RunOptions): Promise<RunOutcome> {
   const mcp = mcpServerCommand();
+  const sources: Sources = { calendar: Boolean(opts.google) };
+  // Google credentials go to the MCP server only, never into Claude Code's own environment.
+  const googleEnv = opts.google
+    ? {
+        GOOGLE_CLIENT_ID: opts.google.clientId,
+        GOOGLE_CLIENT_SECRET: opts.google.clientSecret,
+        GOOGLE_REFRESH_TOKEN: opts.google.refreshToken,
+      }
+    : {};
   const mcpConfig = {
     mcpServers: {
       agents: {
         type: 'stdio',
         command: mcp.command,
         args: mcp.args,
-        env: { AGENTS_API_URL: opts.apiUrl, RUN_ID: String(claimed.run.id), RUN_TOKEN: claimed.runToken },
+        env: {
+          AGENTS_API_URL: opts.apiUrl,
+          RUN_ID: String(claimed.run.id),
+          RUN_TOKEN: claimed.runToken,
+          ...googleEnv,
+        },
       },
     },
   };
   const cwd = path.join(REPO_ROOT, path.dirname(claimed.agent.instructions_path));
-  const args = claudeArgs(buildPrompt(claimed), mcpConfig, opts.model);
+  const args = claudeArgs(buildPrompt(claimed, new Date(), sources), mcpConfig, opts.model, allowedTools(sources));
 
   return new Promise<RunOutcome>((resolve) => {
     const child = spawn(opts.claudeBin, args, { cwd, env: claudeEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
