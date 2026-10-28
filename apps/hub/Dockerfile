@@ -16,6 +16,7 @@ WORKDIR /repo
 # Workspace dependencies are hoisted to the root node_modules.
 COPY --from=build /repo/node_modules node_modules
 COPY --from=build /repo/apps/hub/dist apps/hub/dist
+COPY --from=build /repo/apps/hub/public apps/hub/public
 COPY --from=build /repo/apps/hub/package.json apps/hub/package.json
 COPY package.json ./
 USER node

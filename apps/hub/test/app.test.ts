@@ -71,27 +71,48 @@ test('www redirects to the apex, keeping the path', async () => {
 test('everything else needs a valid Access token', async () => {
   assert.equal((await get('/')).status, 403);
   assert.equal((await get('/', { 'cf-access-jwt-assertion': 'bad' })).status, 403);
-  assert.equal((await get('/hub.css')).status, 403);
+  assert.equal((await get('/hq.css')).status, 403);
+  assert.equal((await get('/hq.js')).status, 403);
+  assert.equal((await get('/api/hq')).status, 403);
 });
 
-test('the page shows the brief escaped, the runs and the signed-in email', async () => {
+test('the page shell loads its script and styles from the hub only', async () => {
   const res = await get('/', authed);
   assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-security-policy') ?? '', /default-src 'none'/);
+  const csp = res.headers.get('content-security-policy') ?? '';
+  assert.match(csp, /default-src 'none'/);
+  assert.match(csp, /script-src 'self'(;|$)/);
   const html = await res.text();
-  assert.ok(html.includes('<h3>Hello</h3>'));
-  assert.ok(html.includes('&lt;b&gt;first&lt;/b&gt;'));
+  assert.ok(html.includes('src="/hq.js"'));
   assert.ok(html.includes('bailey@example.com'));
-  assert.ok(html.includes('Plumbing test'));
-  assert.ok(html.includes('Tue 27 Oct, 6:30am'));
+  for (const path of ['/hq.js', '/hq.css', '/vendor/preact-htm.js']) {
+    assert.equal((await get(path, authed)).status, 200, path);
+  }
 });
 
-test('the page still renders when the agent API is down', async () => {
+test('HQ data carries the brief as escaped HTML, the runs and the placeholder content', async () => {
+  const res = await get('/api/hq', authed);
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.email, 'bailey@example.com');
+  assert.equal(data.agentsError, false);
+  assert.ok(data.brief.html.includes('<h3>Hello</h3>'));
+  assert.ok(data.brief.html.includes('&lt;b&gt;first&lt;/b&gt;'));
+  assert.equal(data.brief.when, 'Tue 27 Oct, 6:30am');
+  assert.equal(data.runs[0].kind, 'Plumbing test');
+  assert.equal(data.busy, false);
+  assert.ok(data.mock.mail.length > 0);
+});
+
+test('HQ data still loads when the agent API is down', async () => {
   failAgents = true;
   try {
-    const res = await get('/', authed);
+    const res = await get('/api/hq', authed);
     assert.equal(res.status, 200);
-    assert.ok((await res.text()).includes("isn't reachable"));
+    const data = await res.json();
+    assert.equal(data.agentsError, true);
+    assert.equal(data.brief, null);
+    assert.deepEqual(data.runs, []);
   } finally {
     failAgents = false;
   }
@@ -109,6 +130,12 @@ test('run now queues a run from the hub', async () => {
   const res = await post('kind=test', { ...authed, origin: ORIGIN });
   assert.equal(res.status, 303);
   assert.deepEqual(queued.splice(0), ['test']);
+});
+
+test('run now answers the page script with no content', async () => {
+  const res = await post('kind=morning_brief', { ...authed, origin: ORIGIN, accept: 'application/json' });
+  assert.equal(res.status, 204);
+  assert.deepEqual(queued.splice(0), ['morning_brief']);
 });
 
 test('run now refuses cross-site posts and unknown kinds', async () => {

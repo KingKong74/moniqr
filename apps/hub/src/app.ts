@@ -1,7 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { AccessDenied, type Identify } from './access.js';
 import { RUN_KINDS, type AgentsClient, type RunKind } from './agents.js';
-import { renderPage, STYLES } from './page.js';
+import { hqData, renderPage } from './page.js';
+
+// The page's own script and styles. They sit beside src/ and dist/, so this works for both.
+const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
+// Preact, its hooks and htm in one ES module, so the browser needs no build step or import map.
+const PREACT = fileURLToPath(import.meta.resolve('htm/preact/standalone'));
 
 export interface HubOptions {
   agents: AgentsClient;
@@ -17,7 +23,16 @@ export function createApp(opts: HubOptions) {
 
   app.use((_req, res, next) => {
     res.set({
-      'content-security-policy': "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+      'content-security-policy': [
+        "default-src 'none'",
+        "script-src 'self'",
+        "style-src 'self' https://fonts.googleapis.com",
+        'font-src https://fonts.gstatic.com',
+        "connect-src 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+        "base-uri 'none'",
+      ].join('; '),
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'same-origin',
       'cache-control': 'no-store',
@@ -47,16 +62,21 @@ export function createApp(opts: HubOptions) {
     }
   });
 
-  app.get('/hub.css', (_req, res) => {
-    res.type('text/css').send(STYLES);
+  app.use(express.static(PUBLIC_DIR, { index: false }));
+  app.get('/vendor/preact-htm.js', (_req, res) => {
+    res.sendFile(PREACT);
   });
 
-  app.get('/', async (_req, res) => {
+  app.get('/', (_req, res) => {
+    res.type('html').send(renderPage(res.locals.email));
+  });
+
+  app.get('/api/hq', async (_req, res) => {
     const [brief, runs] = await Promise.allSettled([opts.agents.latestBrief(), opts.agents.recentRuns(5)]);
     const agentsError = brief.status === 'rejected' || runs.status === 'rejected';
     if (agentsError) console.error('[hub] agent API unreachable', brief.status === 'rejected' ? brief.reason : runs);
-    res.type('html').send(
-      renderPage({
+    res.json(
+      hqData({
         email: res.locals.email,
         brief: brief.status === 'fulfilled' ? brief.value : null,
         runs: runs.status === 'fulfilled' ? runs.value : [],
@@ -77,7 +97,9 @@ export function createApp(opts: HubOptions) {
       return;
     }
     await opts.agents.queueRun(kind);
-    res.redirect(303, '/');
+    // The page posts with fetch and refreshes itself; a plain form post lands back on HQ.
+    if (req.accepts(['html', 'json']) === 'json') res.status(204).end();
+    else res.redirect(303, '/');
   });
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
