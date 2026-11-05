@@ -1,5 +1,5 @@
 /**
- * One-off: get a read-only Google Calendar refresh token and save it to an env file.
+ * One-off: get a read-only Google refresh token (Calendar and Gmail) and save it to an env file.
  *
  *   npm run google-auth -w services/agents [-- path/to/ops.env]
  *
@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
-import { CALENDAR_SCOPE } from './google.js';
+import { GOOGLE_SCOPES, scopesMatch } from './google.js';
 
 const PORT = 8765;
 const REDIRECT_URI = `http://127.0.0.1:${PORT}/`;
@@ -59,7 +59,7 @@ consent.search = new URLSearchParams({
   client_id: clientId,
   redirect_uri: REDIRECT_URI,
   response_type: 'code',
-  scope: CALENDAR_SCOPE,
+  scope: GOOGLE_SCOPES.join(' '),
   access_type: 'offline',
   prompt: 'consent',
   state,
@@ -67,7 +67,7 @@ consent.search = new URLSearchParams({
   code_challenge_method: 'S256',
 }).toString();
 
-console.log(`\n1. Open this link and allow read-only calendar access:\n\n${consent}\n`);
+console.log(`\n1. Open this link and allow read-only calendar and Gmail access. Leave both boxes ticked:\n\n${consent}\n`);
 console.log(
   `2. Google then sends you to ${REDIRECT_URI}. If this machine's browser opened it, you're done.\n` +
     '   If the page fails to load (browser on another device), copy the whole address from the\n' +
@@ -96,9 +96,9 @@ async function finish(callbackUrl: string): Promise<string> {
   const data = (await res.json()) as { refresh_token?: string; scope?: string; error?: string; error_description?: string };
   if (!res.ok) throw new Error(`Token exchange failed: ${data.error_description ?? data.error ?? res.status}`);
   if (!data.refresh_token) throw new Error('Google returned no refresh token. Remove the app at myaccount.google.com/permissions and try again.');
-  if (data.scope?.trim() !== CALENDAR_SCOPE) throw new Error(`Unexpected scopes granted: ${data.scope}`);
+  if (!scopesMatch(data.scope)) throw new Error(`Expected exactly ${GOOGLE_SCOPES.join(', ')} but Google granted: ${data.scope}`);
   saveToEnvFile(envPath, 'GOOGLE_REFRESH_TOKEN', data.refresh_token);
-  return `Saved GOOGLE_REFRESH_TOKEN to ${envPath} (read-only calendar scope).`;
+  return `Saved GOOGLE_REFRESH_TOKEN to ${envPath} (read-only calendar and Gmail scopes).`;
 }
 
 let done = false;

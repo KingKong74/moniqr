@@ -55,13 +55,15 @@ Both schedules ship disabled. Switch one on (or change its time) from the agent 
 curl -X PATCH .../schedules/1 -H "Authorization: Bearer $API_TOKEN" -H 'content-type: application/json' -d '{"enabled":true}'
 ```
 
-## Google Calendar
+## Google Calendar and Gmail
 
-The EA reads calendars with one refresh token limited to `calendar.readonly`. The token stays in the runner's environment and is passed only to the agent MCP server, never to Claude Code itself.
+The EA reads calendars and email with one refresh token limited to `calendar.readonly` and `gmail.readonly`. The token stays in the runner's environment and is passed only to the agent MCP server, never to Claude Code itself.
 
-1. In Google Cloud, create a project, enable the Google Calendar API, set up the OAuth consent screen and **publish it to production** (in Testing, refresh tokens expire after 7 days). Then create an OAuth client of type *Desktop app*.
+1. In Google Cloud, create a project, enable the Google Calendar and Gmail APIs, set up the OAuth consent screen and **publish it to production** (in Testing, refresh tokens expire after 7 days). Then create an OAuth client of type *Desktop app*.
 2. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `~/.config/moniqr/ops.env`, then run `npm run google-auth -w services/agents` and follow the link. It saves `GOOGLE_REFRESH_TOKEN` to the same file without printing it.
 3. Copy all three into the Dokploy environment and redeploy.
+
+Gmail is a restricted scope, so Google shows an "unverified app" warning at consent. That is expected for a personal client: choose Advanced, then continue. Leave both permission boxes ticked; `google-auth` refuses a token that doesn't hold exactly these two scopes.
 
 ## Deploying on Dokploy
 

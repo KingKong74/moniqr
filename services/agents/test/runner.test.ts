@@ -19,15 +19,18 @@ test('Claude Code is started with no built-in tools and only the agent MCP serve
   assert.ok(!args.includes('--dangerously-skip-permissions'));
 });
 
-test('calendar tools are allowed only when Google is connected, and nothing that writes to Google exists', () => {
-  assert.deepEqual(allowedTools({ calendar: false }), ['mcp__agents__write_brief']);
-  assert.deepEqual(allowedTools({ calendar: true }), [
+test('Google tools are allowed only when Google is connected, and nothing that writes to Google exists', () => {
+  assert.deepEqual(allowedTools({ google: false }), ['mcp__agents__write_brief']);
+  const expected = [
     'mcp__agents__write_brief',
     'mcp__agents__list_calendars',
     'mcp__agents__get_events',
-  ]);
-  const args = claudeArgs('hello', { mcpServers: {} }, undefined, allowedTools({ calendar: true }));
-  assert.equal(args[args.indexOf('--allowedTools') + 1], 'mcp__agents__write_brief,mcp__agents__list_calendars,mcp__agents__get_events');
+    'mcp__agents__search_email',
+    'mcp__agents__read_email',
+  ];
+  assert.deepEqual(allowedTools({ google: true }), expected);
+  const args = claudeArgs('hello', { mcpServers: {} }, undefined, allowedTools({ google: true }));
+  assert.equal(args[args.indexOf('--allowedTools') + 1], expected.join(','));
 });
 
 describe('runner', { skip: skipReason }, () => {
@@ -115,7 +118,7 @@ describe('runner', { skip: skipReason }, () => {
     await finishRun(pool, claimed.run.id, outcome);
   });
 
-  test('with Google connected, the MCP server offers calendar tools and Claude Code never sees the credentials', async () => {
+  test('with Google connected, the MCP server offers calendar and Gmail tools and Claude Code never sees the credentials', async () => {
     const claimed = await claim('test');
     const outcome = await executeRun(claimed, {
       apiUrl: api.baseUrl,
@@ -125,16 +128,18 @@ describe('runner', { skip: skipReason }, () => {
     });
     assert.equal(outcome.status, 'done', outcome.error);
     const seen = JSON.parse((outcome.result as { result: string }).result);
-    assert.deepEqual(seen.tools.sort(), ['get_events', 'list_calendars', 'write_brief']);
+    assert.deepEqual(seen.tools.sort(), ['get_events', 'list_calendars', 'read_email', 'search_email', 'write_brief']);
     assert.ok(!seen.envKeys.some((k: string) => k.startsWith('GOOGLE_')), 'Google credentials stay with the MCP server');
     assert.equal((await finishRun(pool, claimed.run.id, outcome)).status, 'done');
   });
 
-  test('the morning brief prompt points at today and tomorrow when the calendar is connected', async () => {
+  test('the morning brief prompt points at today, tomorrow and email when Google is connected', async () => {
     const claimed = await claim('morning_brief');
-    const prompt = buildPrompt(claimed, new Date('2026-10-26T20:30:00Z'), { calendar: true });
+    const prompt = buildPrompt(claimed, new Date('2026-10-26T20:30:00Z'), { google: true });
     assert.match(prompt, /get_events with from 2026-10-27 and days 2/);
-    assert.match(prompt, /Gmail and the finance sheet are not connected/);
+    assert.match(prompt, /search his email/);
+    assert.match(prompt, /finance sheet is not connected/);
+    assert.doesNotMatch(prompt, /Gmail/);
     await finishRun(pool, claimed.run.id, { status: 'failed', error: 'test cleanup' });
   });
 

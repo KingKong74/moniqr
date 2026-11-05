@@ -33,37 +33,41 @@ const brisbaneDate = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: '
 
 /** Which data sources this run has tools for. */
 export interface Sources {
-  calendar: boolean;
+  /** One Google sign-in covers calendar and Gmail, so they connect together. */
+  google: boolean;
 }
 
-export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sources = { calendar: false }): string {
+export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sources = { google: false }): string {
   const today = brisbaneDate(now);
   const when = `It is ${brisbaneNow(now)} in Brisbane (${today}). This is run ${claimed.run.id}.`;
   const noData =
     'No calendar, email or finance tools are connected yet, so do not invent any commitments, bills or figures. ' +
     'Say plainly which sections are waiting on which data source.';
   const notYet =
-    'Gmail and the finance sheet are not connected yet, so do not invent bills, replies or figures; ' +
+    'The finance sheet is not connected yet, so do not invent balances or cashflow figures; ' +
     'say so in one line at the end of the brief.';
   switch (claimed.run.kind) {
     case 'morning_brief':
-      if (!sources.calendar) return `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ${noData}`;
+      if (!sources.google) return `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ${noData}`;
       return (
         `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ` +
         `Call get_events with from ${today} and days 2 to see today and tomorrow. ` +
         'Cover today in time order (work, Woolworths shifts, study, everything else), any clashes or overlaps, ' +
         "tight gaps between commitments in different places, and anything early tomorrow he should prepare for tonight. " +
-        `If today is empty, say so in one line. ${notYet}`
+        'If today is empty, say so in one line. ' +
+        'Then search his email as your instructions describe, and cover bills due in the next 7 days and anything ' +
+        `that needs a reply or decision. If nothing turns up, say so in one line. ${notYet}`
       );
     case 'weekly_lookahead':
-      if (!sources.calendar) {
+      if (!sources.google) {
         return `${when}\n\nWrite Bailey's weekly look-ahead for the coming week and save it with write_brief. ${noData}`;
       }
       return (
         `${when}\n\nWrite Bailey's weekly look-ahead and save it with write_brief. ` +
         `Call get_events with from ${brisbaneDate(new Date(now.getTime() + 86_400_000))} and days 7. ` +
         'Give the shape of the week: busiest days, clashes, shifts, deadlines and free evenings for study. ' +
-        notYet
+        'Search his email as your instructions describe and list the bills due in the next 14 days, ' +
+        `saying they come from email only. ${notYet}`
       );
     case 'test':
       return `${when}\n\nThis is a plumbing test. Call write_brief once with a two-line brief confirming the run works, mentioning the run number and the time.`;
@@ -72,10 +76,17 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
   }
 }
 
-/** The MCP tools a run may call. Calendar tools only when Google is connected. */
+/** The MCP tools a run may call. Google tools only when Google is connected. */
 export function allowedTools(sources: Sources): string[] {
   const tools = ['mcp__agents__write_brief'];
-  if (sources.calendar) tools.push('mcp__agents__list_calendars', 'mcp__agents__get_events');
+  if (sources.google) {
+    tools.push(
+      'mcp__agents__list_calendars',
+      'mcp__agents__get_events',
+      'mcp__agents__search_email',
+      'mcp__agents__read_email',
+    );
+  }
   return tools;
 }
 
@@ -84,7 +95,7 @@ export interface RunOptions {
   claudeBin: string;
   model?: string;
   timeoutMs: number;
-  /** Read-only Google credentials for the MCP server's calendar tools. */
+  /** Read-only Google credentials for the MCP server's calendar and Gmail tools. */
   google?: GoogleCredentials | null;
 }
 
@@ -99,7 +110,7 @@ export function claudeArgs(
   prompt: string,
   mcpConfig: object,
   model?: string,
-  tools: string[] = allowedTools({ calendar: false }),
+  tools: string[] = allowedTools({ google: false }),
 ): string[] {
   const args = [
     '-p',
@@ -133,7 +144,7 @@ function claudeEnv(): NodeJS.ProcessEnv {
 
 export async function executeRun(claimed: ClaimedRun, opts: RunOptions): Promise<RunOutcome> {
   const mcp = mcpServerCommand();
-  const sources: Sources = { calendar: Boolean(opts.google) };
+  const sources: Sources = { google: Boolean(opts.google) };
   // Google credentials go to the MCP server only, never into Claude Code's own environment.
   const googleEnv = opts.google
     ? {

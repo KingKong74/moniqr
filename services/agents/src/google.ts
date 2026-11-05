@@ -1,10 +1,19 @@
 /**
- * Read-only Google Calendar access for the agent MCP server. Uses one OAuth refresh token
- * with the calendar.readonly scope and calls the REST API directly, so there is nothing in
- * here that could create, change or delete an event.
+ * Read-only Google Calendar access for the agent MCP server, and the sign-in it shares with
+ * Gmail. Uses one OAuth refresh token and calls the REST API directly, so there is nothing
+ * in here that could create, change or delete an event.
  */
 
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+/** Every scope the refresh token holds. Each one is read-only. */
+export const GOOGLE_SCOPES = [CALENDAR_SCOPE, GMAIL_SCOPE];
+
+/** True when Google granted exactly GOOGLE_SCOPES: none unticked at consent, none extra. */
+export function scopesMatch(granted: string | undefined): boolean {
+  const scopes = new Set(granted?.trim().split(/\s+/) ?? []);
+  return scopes.size === GOOGLE_SCOPES.length && GOOGLE_SCOPES.every((s) => scopes.has(s));
+}
 
 export interface GoogleCredentials {
   clientId: string;
@@ -46,10 +55,11 @@ export interface CalendarEvent {
 const API = 'https://www.googleapis.com/calendar/v3';
 const DESCRIPTION_LIMIT = 500;
 
-export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch = fetch) {
+/** Swaps the refresh token for access tokens, reusing each until it is close to expiry. */
+export function googleAccessToken(creds: GoogleCredentials, fetchImpl: typeof fetch = fetch): () => Promise<string> {
   let cached: { token: string; expiresAt: number } | null = null;
 
-  async function accessToken(): Promise<string> {
+  return async function accessToken(): Promise<string> {
     if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
     const res = await fetchImpl('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -67,7 +77,11 @@ export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch
     }
     cached = { token: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
     return cached.token;
-  }
+  };
+}
+
+export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch = fetch) {
+  const accessToken = googleAccessToken(creds, fetchImpl);
 
   async function get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
     const url = new URL(API + path);
