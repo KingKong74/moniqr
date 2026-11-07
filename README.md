@@ -76,7 +76,7 @@ The EA runs with the pinned Codex CLI using your ChatGPT login. Put compact JSON
 seeds its dedicated `agents-codex` volume only if no login exists; Codex refreshes that
 cached login in place. Do not put the auth cache in Git or paste it into chat.
 `CODEX_MODEL` optionally chooses a model; blank uses the CLI default. ChatGPT/Codex usage
-limits still apply. Claude credentials are no longer used.
+limits still apply.
 
 The image generates a restricted model catalog from its pinned CLI: shell execution,
 file edits and experimental tools are removed. Web, image, browser, apps, plugins and

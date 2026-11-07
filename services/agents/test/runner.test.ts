@@ -106,7 +106,6 @@ describe('runner', { skip: skipReason }, () => {
     assert.match(seen.second.text, /409/);
     assert.match(seen.cwd, /moniqr-run-/, 'runs in an empty directory; instructions are supplied explicitly');
     assert.ok(!seen.envKeys.includes('CODEX_AUTH_JSON'));
-    assert.ok(!seen.envKeys.includes('CLAUDE_CODE_OAUTH_TOKEN'));
     await assert.rejects(readFile(path.join(testHome, 'config.toml')), /ENOENT/);
     assert.ok(!seen.envKeys.includes('RUNNER_TOKEN'), 'runner token not passed to Codex');
     assert.ok(!seen.envKeys.includes('DATABASE_URL'));
