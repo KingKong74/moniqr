@@ -402,6 +402,15 @@ class App extends Component {
   renderHq(v) {
     return html`
       <main class="main">
+        <section class="col" style="gap: 10px;" aria-label="Live Executive Assistant">
+          <h2>Executive Assistant</h2>
+          <p class="fs14 muted">Generate a real brief from your connected email and calendars. The other dashboard cards contain sample data.</p>
+          ${this.state.data.agentsError && html`<p class="fs14 coral">The agent service isn't reachable right now.</p>`}
+          <div class="row wrap">
+            <button class="btn btn-primary" disabled=${this.state.posting || this.state.data.busy || this.state.data.agentsError} onClick=${() => { this.openView('briefing'); this.runEa('morning_brief'); }}>${this.state.posting || this.state.data.busy ? 'EA is running…' : 'Run EA now'}</button>
+            <button class="btn btn-secondary" onClick=${() => this.openView('briefing')}>View brief and run status</button>
+          </div>
+        </section>
         <div class="hero">${this.renderCarousel(v)} ${this.renderDecision(v)}</div>
         ${this.renderFocusCards(v)} ${this.renderInbox(v)} ${this.renderGlance(v)} ${this.renderCalendar(v)}
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px;">
