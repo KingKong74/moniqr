@@ -14,6 +14,9 @@ FROM node:22-slim
 ENV NODE_ENV=production \
     AGENTS_REPO_ROOT=/repo \
     TZ=Australia/Brisbane
+# Codex uses the system trust store for HTTPS.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 # Pin the CLI: the generated catalog removes native filesystem/exec tool capabilities.
 RUN npm install -g @openai/codex@0.166.0 && npm cache clean --force
 COPY services/agents/scripts/codex-models.mjs /opt/moniqr/codex-models.mjs
