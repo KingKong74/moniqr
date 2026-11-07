@@ -1,0 +1,10 @@
+.git
+node_modules
+**/node_modules
+**/dist
+.env
+.env.*
+!.env.example
+client_secret_*.json
+**/auth.json
+*.log

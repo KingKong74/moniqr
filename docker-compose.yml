@@ -52,13 +52,16 @@ services:
       # Talks to the API over the compose network; no database credentials here.
       AGENTS_API_URL: http://agents-api:8080
       RUNNER_TOKEN: ${RUNNER_TOKEN}
-      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN}
-      CLAUDE_MODEL: ${CLAUDE_MODEL:-}
+      CODEX_AUTH_JSON: ${CODEX_AUTH_JSON:?set CODEX_AUTH_JSON}
+      CODEX_HOME: /home/node/.moniqr-codex
+      CODEX_MODEL: ${CODEX_MODEL:-}
       RUN_TIMEOUT_MS: ${RUN_TIMEOUT_MS:-600000}
       # Read-only Google Calendar and Gmail. Leave all three blank to run without Google tools.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN:-}
+    volumes:
+      - agents-codex:/home/node/.moniqr-codex
     # One run at a time on an 8GB mini PC.
     mem_limit: 1536m
 
@@ -87,3 +90,4 @@ services:
 
 volumes:
   agents-pg:
+  agents-codex:

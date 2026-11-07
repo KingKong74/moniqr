@@ -1,5 +1,5 @@
 /**
- * The agent MCP server. Claude Code starts it over stdio for a single run.
+ * The agent MCP server. Codex starts it over stdio for a single run.
  * It holds no database credentials: every tool calls the agent API with the
  * run's one-off token, which stops working the moment the run ends.
  */

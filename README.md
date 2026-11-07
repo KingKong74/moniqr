@@ -5,7 +5,7 @@ Everything that runs on moniqr.com.
 | Path | What it is | Status |
 | --- | --- | --- |
 | `services/agents` | Agent service: API, scheduler, runner and MCP server. Runs the Executive Assistant now and the rest of the agent hierarchy later. | Phase 1 |
-| `agents/ea` | The Executive Assistant's instructions (`CLAUDE.md`). The runner starts Claude Code in this folder. | Phase 1 |
+| `agents/ea` | The Executive Assistant's instructions (`CLAUDE.md`). The runner supplies these instructions to Codex. | Phase 1 |
 | `apps/hub` | The hub and EA homepage at the root of moniqr.com, behind Cloudflare Access. | Phase 2 |
 | `apps/finance` | The budgeting app, moving to finance.moniqr.com. | Later |
 
@@ -15,7 +15,7 @@ The design spec lives in Claude Docs: "Executive Assistant — Design Spec".
 
 1. Something queues a run: a schedule, `POST /agents/ea/run` (the hub's *Run EA now*), or an instruction sent to the inbox.
 2. The runner claims the run from the agent API and receives a one-off run token.
-3. The runner starts Claude Code headless in `agents/ea`, with built-in tools switched off and only the agent MCP server available.
+3. The runner starts Codex headless in `agents/ea`, with built-in tools switched off and only the agent MCP server available.
 4. The EA writes its output through MCP tools (`write_brief` in phase 1). The MCP server calls the agent API with the run token, so the runner never holds database credentials.
 5. The runner marks the run done or failed.
 
@@ -28,7 +28,7 @@ npm install
 cp .env.example .env            # fill in DATABASE_URL and the two tokens
 npm run migrate -w services/agents
 npm run dev -w services/agents      # API and scheduler on :8080
-npm run runner -w services/agents   # runner loop, needs `claude` on PATH
+npm run runner -w services/agents   # runner loop, needs `codex` on PATH and CODEX_MODEL_CATALOG pointing to a restricted catalog
 ```
 
 Queue a test run:
@@ -43,11 +43,11 @@ Tests need a Postgres they can create and drop databases on. Each test file gets
 TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres npm test
 ```
 
-The runner tests use stand-ins for Claude Code in `services/agents/test/fixtures`, so they need no Claude login and cost nothing.
+The runner tests use stand-ins for Codex in `services/agents/test/fixtures`, so they need no Codex login and cost nothing.
 
 ## First real run
 
-After deploying, open moniqr.com and press *Plumbing test*. The page refreshes until the run finishes, then shows the test brief. The runner's logs in Dokploy show what Claude Code did.
+After deploying, open moniqr.com and press *Plumbing test*. The page refreshes until the run finishes, then shows the test brief. The runner's logs in Dokploy show what Codex did.
 
 Both schedules ship disabled. Switch one on (or change its time) from the agent API, for example the 6:30am morning brief:
 
@@ -57,7 +57,7 @@ curl -X PATCH .../schedules/1 -H "Authorization: Bearer $API_TOKEN" -H 'content-
 
 ## Google Calendar and Gmail
 
-The EA reads calendars and email with one refresh token limited to `calendar.readonly` and `gmail.readonly`. The token stays in the runner's environment and is passed only to the agent MCP server, never to Claude Code itself.
+The EA reads calendars and email with one refresh token limited to `calendar.readonly` and `gmail.readonly`. The token stays in the runner's environment and is passed only to the agent MCP server, never to the Codex model process itself.
 
 1. In Google Cloud, create a project, enable the Google Calendar and Gmail APIs, set up the OAuth consent screen and **publish it to production** (in Testing, refresh tokens expire after 7 days). Then create an OAuth client of type *Desktop app*.
 2. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `~/.config/moniqr/ops.env`, then run `npm run google-auth -w services/agents` and follow the link. It saves `GOOGLE_REFRESH_TOKEN` to the same file without printing it.
@@ -68,3 +68,18 @@ Gmail is a restricted scope, so Google shows an "unverified app" warning at cons
 ## Deploying on Dokploy
 
 `docker-compose.yml` defines four services: `postgres`, `agents-api`, `agents-runner` and `hub`. Create a Compose app in Dokploy pointing at this repo, set the variables from `.env.example`, and deploy. Only `hub` gets domains (`moniqr.com` and `www.moniqr.com`); `agents-api` stays on the compose network.
+
+## Codex runner login
+
+The EA runs with the pinned Codex CLI using your ChatGPT login. Put compact JSON from
+`~/.codex/auth.json` into Dokploy's `CODEX_AUTH_JSON` secret environment value. The runner
+seeds its dedicated `agents-codex` volume only if no login exists; Codex refreshes that
+cached login in place. Do not put the auth cache in Git or paste it into chat.
+`CODEX_MODEL` optionally chooses a model; blank uses the CLI default. ChatGPT/Codex usage
+limits still apply. Claude credentials are no longer used.
+
+The image generates a restricted model catalog from its pinned CLI: shell execution,
+file edits and experimental tools are removed. Web, image, browser, apps, plugins and
+subagents are disabled too. Each run starts in an empty temporary directory with the EA
+instructions supplied explicitly. Only the agent MCP server is configured; Google and
+per-run API credentials stay in its private configuration, removed after the run.

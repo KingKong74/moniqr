@@ -14,8 +14,11 @@ FROM node:22-slim
 ENV NODE_ENV=production \
     AGENTS_REPO_ROOT=/repo \
     TZ=Australia/Brisbane
-# Claude Code for the runner. Pin a version once the first real run has been checked.
-RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
+# Pin the CLI: the generated catalog removes native filesystem/exec tool capabilities.
+RUN npm install -g @openai/codex@0.166.0 && npm cache clean --force
+COPY services/agents/scripts/codex-models.mjs /opt/moniqr/codex-models.mjs
+RUN codex debug models --bundled | node /opt/moniqr/codex-models.mjs > /opt/moniqr/codex-models.json
+RUN mkdir -p /home/node/.moniqr-codex && chown node:node /home/node/.moniqr-codex
 WORKDIR /repo
 # Workspace dependencies are hoisted to the root node_modules.
 COPY --from=build /repo/node_modules node_modules
@@ -24,7 +27,7 @@ COPY --from=build /repo/services/agents/package.json services/agents/package.jso
 COPY services/agents/migrations services/agents/migrations
 COPY agents agents
 COPY package.json ./
-# Claude Code keeps its config under HOME, so give the node user a writable one.
+# Codex uses a dedicated persistent login directory, separate from agent instructions.
 USER node
 ENV HOME=/home/node
 EXPOSE 8080

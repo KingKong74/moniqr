@@ -23,7 +23,7 @@ async function runOnce(): Promise<boolean> {
 
   const outcome = await executeRun(claimed, {
     apiUrl: config.apiUrl,
-    claudeBin: config.claudeBin,
+    codexBin: config.codexBin,
     model: config.model,
     timeoutMs: config.runTimeoutMs,
     google: config.google,
@@ -53,6 +53,6 @@ process.on('SIGTERM', () => (stopping = true));
 process.on('SIGINT', () => (stopping = true));
 console.log(
   `[runner] polling ${config.apiUrl} every ${config.pollIntervalMs / 1000}s; ` +
-    `Google Calendar ${config.google ? 'connected' : 'not connected'}`,
+    `Google Calendar and Gmail ${config.google ? 'connected' : 'not connected'}`,
 );
 await loop();

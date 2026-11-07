@@ -14,7 +14,7 @@ function numberFrom(name: string, fallback: number): number {
   return value;
 }
 
-/** Longest a single Claude Code run may take before the runner kills it. */
+/** Longest a single Codex run may take before the runner kills it. */
 export const runTimeoutMs = () => numberFrom('RUN_TIMEOUT_MS', 10 * 60_000);
 
 export function serverConfig() {
@@ -35,8 +35,8 @@ export function runnerConfig() {
     runnerToken: required('RUNNER_TOKEN'),
     pollIntervalMs: numberFrom('RUNNER_POLL_MS', 15_000),
     runTimeoutMs: runTimeoutMs(),
-    claudeBin: process.env.CLAUDE_BIN ?? 'claude',
-    model: process.env.CLAUDE_MODEL,
+    codexBin: process.env.CODEX_BIN ?? 'codex',
+    model: process.env.CODEX_MODEL,
     google: googleCredentialsFromEnv(),
   };
 }

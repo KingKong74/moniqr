@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { GoogleCredentials } from '../google.js';
@@ -92,7 +94,9 @@ export function allowedTools(sources: Sources): string[] {
 
 export interface RunOptions {
   apiUrl: string;
-  claudeBin: string;
+  codexBin: string;
+  codexHome?: string;
+  catalogPath?: string;
   model?: string;
   timeoutMs: number;
   /** Read-only Google credentials for the MCP server's calendar and Gmail tools. */
@@ -105,122 +109,154 @@ export interface RunOutcome {
   result?: unknown;
 }
 
-/** Arguments for a locked-down headless Claude Code session. */
-export function claudeArgs(
-  prompt: string,
-  mcpConfig: object,
-  model?: string,
-  tools: string[] = allowedTools({ google: false }),
-): string[] {
-  const args = [
-    '-p',
-    prompt,
-    '--output-format',
-    'json',
-    '--no-session-persistence',
-    // No built-in tools at all: no shell, no file access, no web.
-    '--tools',
-    '',
-    // Only the agent MCP server, nothing from user or project config.
-    '--mcp-config',
-    JSON.stringify(mcpConfig),
-    '--strict-mcp-config',
-    '--allowedTools',
-    tools.join(','),
-    '--permission-mode',
-    'dontAsk',
-  ];
+/** Only our server is configured; native execution, edits, web and apps are disabled. */
+export function codexConfig(server: { command: string; args: string[]; env: Record<string, string> }, sources: Sources, catalogPath: string): string {
+  const json = JSON.stringify;
+  const disabled = ['shell_tool', 'view_image', 'apps', 'plugins', 'remote_plugin', 'multi_agent',
+    'multi_agent_v2', 'browser_use', 'computer_use', 'image_generation', 'memories', 'goals',
+    'code_mode', 'code_mode_host', 'code_mode_only', 'skill_search', 'skill_mcp_dependency_install',
+    'tool_suggest', 'current_time_reminder', 'sleep_tool', 'send_message_to_user_async',
+    'request_permissions_tool', 'token_budget', 'deferred_executor'];
+  return [
+    'approval_policy = "never"', 'sandbox_mode = "read-only"', 'web_search = "disabled"',
+    'cli_auth_credentials_store = "file"', 'project_doc_max_bytes = 0',
+    `model_catalog_json = ${json(catalogPath)}`,
+    '[agents]', 'enabled = false', '[skills.bundled]', 'enabled = false',
+    '[tools.update_plan]', 'enabled = false', '[tools.experimental_request_user_input]', 'enabled = false',
+    '[features]', ...disabled.map((name) => `${name} = false`),
+    '[mcp_servers.agents]', `command = ${json(server.command)}`, `args = ${json(server.args)}`,
+    'required = true', 'default_tools_approval_mode = "approve"', 'startup_timeout_sec = 30', 'tool_timeout_sec = 90',
+    `enabled_tools = ${json(allowedTools(sources).map((name) => name.replace('mcp__agents__', '')))}`,
+    '[mcp_servers.agents.env]', ...Object.entries(server.env).map(([key, value]) => `${key} = ${json(value)}`),
+  ].join('\n') + '\n';
+}
+
+export function codexArgs(prompt: string, model?: string): string[] {
+  const args = ['exec', '--ephemeral', '--json', '--skip-git-repo-check', '--color', 'never'];
   if (model) args.push('--model', model);
+  args.push(prompt);
   return args;
 }
 
-/** Env for Claude Code: only what it needs to authenticate and run. No runner or database secrets. */
-function claudeEnv(): NodeJS.ProcessEnv {
-  const keep = ['PATH', 'HOME', 'LANG', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'];
-  const env: NodeJS.ProcessEnv = { TZ: 'Australia/Brisbane' };
-  for (const key of keep) if (process.env[key]) env[key] = process.env[key];
+/** No runner, database, Google or auth-seed secrets are inherited by the model process. */
+function codexEnv(codexHome: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { TZ: 'Australia/Brisbane', CODEX_HOME: codexHome };
+  for (const key of ['PATH', 'HOME', 'LANG']) if (process.env[key]) env[key] = process.env[key];
   return env;
 }
 
+/** Seed a dedicated, persistent login once. Codex keeps refreshed credentials in this directory. */
+export async function initialiseCodexAuth(codexHome: string, seed = process.env.CODEX_AUTH_JSON): Promise<void> {
+  await mkdir(codexHome, { recursive: true, mode: 0o700 });
+  if (!seed) return;
+  const auth = JSON.parse(seed);
+  if (!auth.tokens?.refresh_token && !auth.OPENAI_API_KEY) throw new Error('CODEX_AUTH_JSON has no usable login');
+  try { await writeFile(path.join(codexHome, 'auth.json'), JSON.stringify(auth), { mode: 0o600, flag: 'wx' }); }
+  catch (err) { if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err; }
+}
+
 export async function executeRun(claimed: ClaimedRun, opts: RunOptions): Promise<RunOutcome> {
+  try { return await executeCodexRun(claimed, opts); }
+  catch (err) { return { status: 'failed', error: `Codex setup failed: ${err instanceof Error ? err.message : String(err)}` }; }
+}
+
+async function executeCodexRun(claimed: ClaimedRun, opts: RunOptions): Promise<RunOutcome> {
   const mcp = mcpServerCommand();
   const sources: Sources = { google: Boolean(opts.google) };
-  // Google credentials go to the MCP server only, never into Claude Code's own environment.
-  const googleEnv = opts.google
+  // Google credentials go to the MCP server only, never into Codex's own environment.
+  const googleEnv: Record<string, string> = opts.google
     ? {
         GOOGLE_CLIENT_ID: opts.google.clientId,
         GOOGLE_CLIENT_SECRET: opts.google.clientSecret,
         GOOGLE_REFRESH_TOKEN: opts.google.refreshToken,
       }
     : {};
-  const mcpConfig = {
-    mcpServers: {
-      agents: {
-        type: 'stdio',
-        command: mcp.command,
-        args: mcp.args,
-        env: {
-          AGENTS_API_URL: opts.apiUrl,
-          RUN_ID: String(claimed.run.id),
-          RUN_TOKEN: claimed.runToken,
-          ...googleEnv,
-        },
-      },
-    },
+  const codexHome = opts.codexHome ?? process.env.CODEX_HOME ?? path.join(homedir(), '.config/moniqr/codex');
+  await initialiseCodexAuth(codexHome);
+  const configPath = path.join(codexHome, 'config.toml');
+  const server = {
+    command: mcp.command, args: mcp.args,
+    env: { AGENTS_API_URL: opts.apiUrl, RUN_ID: String(claimed.run.id), RUN_TOKEN: claimed.runToken, ...googleEnv },
   };
-  const cwd = path.join(REPO_ROOT, path.dirname(claimed.agent.instructions_path));
-  const args = claudeArgs(buildPrompt(claimed, new Date(), sources), mcpConfig, opts.model, allowedTools(sources));
-
-  return new Promise<RunOutcome>((resolve) => {
-    const child = spawn(opts.claudeBin, args, { cwd, env: claudeEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (d) => (stdout += d));
-    child.stderr.on('data', (d) => (stderr += d));
-
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-      setTimeout(() => child.kill('SIGKILL'), 10_000).unref();
-    }, opts.timeoutMs);
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      resolve({ status: 'failed', error: `Could not start Claude Code: ${err.message}` });
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (timedOut) {
-        resolve({ status: 'failed', error: `Timed out after ${Math.round(opts.timeoutMs / 1000)}s` });
-        return;
-      }
-      const parsed = parseResult(stdout);
-      if (code !== 0 || parsed?.is_error) {
-        const reason = parsed?.result ?? (stderr.trim() || `exit code ${code}`);
-        resolve({ status: 'failed', error: String(reason).slice(0, 4000), result: parsed ?? undefined });
-        return;
-      }
-      resolve({ status: 'done', result: parsed ?? undefined });
-    });
-  });
-}
-
-interface ClaudeResult {
-  is_error?: boolean;
-  result?: string;
-  num_turns?: number;
-  total_cost_usd?: number;
-  duration_ms?: number;
-}
-
-function parseResult(stdout: string): ClaudeResult | null {
-  try {
-    const all = JSON.parse(stdout.trim());
-    const { is_error, result, num_turns, total_cost_usd, duration_ms } = all as ClaudeResult;
-    return { is_error, result, num_turns, total_cost_usd, duration_ms };
-  } catch {
-    return null;
+  const catalogPath = opts.catalogPath ?? process.env.CODEX_MODEL_CATALOG ?? '/opt/moniqr/codex-models.json';
+  // Fail closed if the capability-restricted catalog is missing or has native execution/edit tools.
+  const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
+  if (!catalog.models?.length || catalog.models.some((m: { shell_type: string; apply_patch_tool_type: unknown; experimental_supported_tools: unknown[]; tool_mode: string; supports_search_tool: boolean }) =>
+    m.shell_type !== 'disabled' || m.apply_patch_tool_type != null || m.experimental_supported_tools?.length || m.tool_mode !== 'direct' || m.supports_search_tool !== false)) {
+    throw new Error('Codex catalog must disable native shell, edits and experimental tools');
   }
+  const instructions = await readFile(path.join(REPO_ROOT, claimed.agent.instructions_path), 'utf8');
+  const args = codexArgs(`${instructions}\n\n${buildPrompt(claimed, new Date(), sources)}`, opts.model);
+
+  const cwd = await mkdtemp(path.join(tmpdir(), 'moniqr-run-'));
+  try {
+    await writeFile(configPath, codexConfig(server, sources, catalogPath), { mode: 0o600 });
+    return await new Promise<RunOutcome>((resolve) => {
+      const child = spawn(opts.codexBin, args, { cwd, env: codexEnv(codexHome), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => (stdout += d));
+      child.stderr.on('data', (d) => (stderr += d));
+
+      const killGroup = (signal: NodeJS.Signals) => {
+        try { if (child.pid) process.kill(-child.pid, signal); } catch {}
+      };
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        killGroup('SIGTERM');
+        setTimeout(() => killGroup('SIGKILL'), 10_000).unref();
+      }, opts.timeoutMs);
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        resolve({ status: 'failed', error: `Could not start Codex: ${err.message}` });
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (timedOut) {
+          resolve({ status: 'failed', error: `Timed out after ${Math.round(opts.timeoutMs / 1000)}s` });
+          return;
+        }
+        const parsed = parseCodexResult(stdout);
+        if (code !== 0 || !parsed || parsed.is_error) {
+          const reason = parsed?.result ?? (stderr.trim() || `Codex did not complete successfully (exit code ${code})`);
+          resolve({ status: 'failed', error: String(reason).slice(0, 4000), result: parsed ?? undefined });
+          return;
+        }
+        resolve({ status: 'done', result: parsed ?? undefined });
+      });
+    });
+  } finally {
+    await rm(configPath, { force: true });
+    await rm(cwd, { recursive: true, force: true });
+  }
+}
+
+interface CodexResult {
+  is_error: boolean;
+  result?: string;
+  usage?: unknown;
+  tools_used?: string[];
+}
+
+/** Codex emits JSONL events; a completed turn is required, even with exit code zero. */
+export function parseCodexResult(stdout: string): CodexResult | null {
+  let completed = false;
+  let result: string | undefined;
+  let error: string | undefined;
+  let usage: unknown;
+  const toolsUsed = new Set<string>();
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue;
+    let event;
+    try { event = JSON.parse(line); } catch { return null; }
+    if (event.type === 'turn.completed') { completed = true; usage = event.usage; }
+    if (event.type === 'turn.failed' || event.type === 'error') error = event.error?.message ?? event.message ?? 'Codex failed';
+    if (event.type === 'item.completed' && event.item?.type === 'agent_message') result = event.item.text;
+    if (event.type === 'item.completed' && event.item?.type === 'mcp_tool_call' && event.item?.status === 'completed' && typeof event.item.tool === 'string') toolsUsed.add(event.item.tool);
+  }
+  if (error) return { is_error: true, result: error };
+  return completed ? { is_error: false, result, usage, tools_used: [...toolsUsed] } : null;
 }
