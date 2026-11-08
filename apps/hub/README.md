@@ -6,7 +6,9 @@ It is a thin client of the agent API. The Express server sends a page shell, `pu
 
 ## Real and sample data
 
-Only the latest brief, recent runs, *Run EA now* and the project links are real. Everything else comes from `src/mock.ts` until the agent service stores it, and the page says *Sample data* in its top bar. Approving, declining, chat replies, priorities, mood and habits only change the page's own state and reset on reload. Nothing on the page books, buys or sends anything. To make a section real, fill that field of `hqData()` in `src/page.ts` from the agent API and keep its shape.
+The latest brief, recent runs, *Run EA now*, project links and Google Calendar events are real. The calendar reads the current Brisbane week across your Google calendars through the agent API and refreshes once per minute. Configure all three Google credentials in the API environment as described in the root README; the calendar shows a disconnected or unavailable message when it cannot load. Calendar access is read-only.
+
+Other cards come from `src/mock.ts`, and the page labels sample data. Approving, declining, chat replies, priorities, mood and habits only change the page's own state and reset on reload. Nothing on the page books, buys or sends anything. To make another section real, fill that field of `hqData()` in `src/page.ts` from the agent API and keep its shape.
 
 ## Login
 
