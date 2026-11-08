@@ -12,6 +12,7 @@ import {
 } from '../runs.js';
 import { nextFireAfter } from '../scheduler.js';
 import { bearer, safeEqual } from '../tokens.js';
+import { findingInput, scanInput, listFindings, saveFinding, saveScan } from '../findings.js';
 
 function isValidCron(cron: string): boolean {
   try {
@@ -54,6 +55,21 @@ export function createApp(opts: AppOptions) {
   };
   const hub = requireToken(opts.apiToken);
   const runner = requireToken(opts.runnerToken);
+
+  app.get('/findings', hub, async (_req, res) => {
+    res.json(await listFindings(pool));
+  });
+
+  app.patch('/findings/:id', hub, async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const body = z.object({ status: z.enum(['new', 'reviewed', 'dismissed']) }).strict().parse(req.body);
+    const { rows } = await pool.query(
+      `UPDATE email_findings SET status=$2, decided_at=CASE WHEN $2='new' THEN NULL ELSE now() END
+       WHERE id=$1 RETURNING *`, [id, body.status],
+    );
+    if (!rows[0]) throw new NotFoundError(`Finding ${id} not found`);
+    res.json({ finding: rows[0] });
+  });
 
   app.get('/health', async (_req, res) => {
     await pool.query('SELECT 1');
@@ -194,6 +210,22 @@ export function createApp(opts: AppOptions) {
   });
 
   // --- MCP server: writes scoped to one running run ---
+
+  app.post('/runs/:id/findings', async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const token = bearer(req.header('authorization'));
+    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    const finding = await saveFinding(pool, id, findingInput.parse(req.body));
+    res.status(201).json({ finding });
+  });
+
+  app.post('/runs/:id/email-scan', async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const token = bearer(req.header('authorization'));
+    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    await saveScan(pool, id, scanInput.parse(req.body));
+    res.json({ ok: true });
+  });
 
   app.post('/runs/:id/brief', async (req, res) => {
     const id = idParam.parse(req.params.id);

@@ -6,13 +6,15 @@ It is a thin client of the agent API. The Express server sends a page shell, `pu
 
 ## Real and sample data
 
-The latest brief, recent runs, *Run EA now*, project links and Google Calendar events are real. The calendar reads the current Brisbane week across your Google calendars through the agent API and refreshes once per minute. Configure all three Google credentials in the API environment as described in the root README; the calendar shows a disconnected or unavailable message when it cannot load. Calendar access is read-only.
+The latest brief, recent runs, *Run EA now*, project links, admin inbox findings and Google Calendar events are real. The calendar reads the current Brisbane week across your Google calendars through the agent API and refreshes once per minute. Configure all three Google credentials in the API environment as described in the root README; the calendar shows a disconnected or unavailable message when it cannot load. Calendar access is read-only.
 
-Other cards come from `src/mock.ts`, and the page labels sample data. Approving, declining, chat replies, priorities, mood and habits only change the page's own state and reset on reload. Nothing on the page books, buys or sends anything. To make another section real, fill that field of `hqData()` in `src/page.ts` from the agent API and keep its shape.
+The Admin inbox replaces sample messages and approval controls with source-linked email findings. **Scan email** starts an EA morning-brief run. Review/dismiss/new decisions persist through the agent API and survive reloads and re-scans. The inbox shows the latest scan's completion state and the last successful scan separately, and retains findings when a scan fails. Lists are capped at 200 with new findings first; the UI reports when more exist.
+
+Lifestyle cards, the carousel and chat still come from `src/mock.ts`, and the page labels sample content. Priorities, mood, habits and chat only change page state and reset on reload. Nothing on the page books, buys or sends anything. Findings are notes for review, not executable approvals.
 
 ## Login
 
-Cloudflare Access sits in front of moniqr.com and its subdomains and only lets in the emails in its policy. Traefik can also be reached directly, so the hub checks the `Cf-Access-Jwt-Assertion` token on every request too: signature, team, AUD tag and an email in `HUB_ALLOWED_EMAILS`. `/health` is the only open route. *Run EA now* only accepts posts whose `Origin` is the hub itself. Scripts load only from the hub; the one third party is Google Fonts for Barlow.
+Cloudflare Access sits in front of moniqr.com and its subdomains and only lets in the emails in its policy. Traefik can also be reached directly, so the hub checks the `Cf-Access-Jwt-Assertion` token on every request too: signature, team, AUD tag and an email in `HUB_ALLOWED_EMAILS`. `/health` is the only open route. Run requests and finding decisions accept only posts whose `Origin` is the hub itself. Scripts load only from the hub; the one third party is Google Fonts for Barlow.
 
 ## Local development
 

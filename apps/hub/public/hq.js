@@ -32,15 +32,6 @@ const EV_STYLE = {
   pend: { bg: 'transparent', border: 'var(--a400)', line: 'dashed', fg: 'var(--a300)', label: 'Awaiting decision' },
 };
 
-const STATUS = {
-  pending: ['Needs decision', 'color-mix(in srgb, var(--accent) 40%, transparent)', 'var(--a200)'],
-  executing: ['Working…', 'var(--wash-8)', 'var(--a300)'],
-  completed: ['Done', 'var(--wash-8)', 'var(--n300)'],
-  failed: ['Failed', 'var(--n200)', 'var(--n900)'],
-  rejected: ['Declined', 'var(--wash-6)', 'var(--n400)'],
-  fyi: ['Update', 'var(--wash-6)', 'var(--n400)'],
-};
-
 const MOODS = ['Low', 'Meh', 'Okay', 'Good', 'Great'];
 const ENERGY = ['Drained', 'Low', 'Steady', 'High', 'Wired'];
 const FOCUS_IDS = ['pri', 'news', 'mood', 'pick'];
@@ -115,16 +106,19 @@ class App extends Component {
 
   async load() {
     clearTimeout(this.poll);
+    const seq = this.loadSeq = (this.loadSeq ?? 0) + 1;
     try {
       const res = await fetch('/api/hq', { headers: { accept: 'application/json' } });
       if (!res.ok) throw new Error(`HQ data returned ${res.status}`);
       const data = await res.json();
+      if (seq !== this.loadSeq) return;
       const first = !this.state.data;
       this.setState(first ? { data, ...this.seed(data.mock) } : { data, loadError: false }, () => {
         if (first) this.startBar();
       });
       this.poll = setTimeout(() => this.load(), data.busy ? POLL_MS : 60_000);
     } catch (err) {
+      if (seq !== this.loadSeq) return;
       console.error(err);
       this.setState({ loadError: true });
       this.poll = setTimeout(() => this.load(), 60_000);
@@ -134,9 +128,9 @@ class App extends Component {
   /** Page state that starts from the placeholder content. */
   seed(mock) {
     return {
-      ap: Object.fromEntries(mock.mail.filter((m) => m.approveLabel).map((m) => [m.id, 'pending'])),
-      read: Object.fromEntries(mock.readMail.map((id) => [id, true])),
-      sel: mock.mail[0]?.id ?? null,
+      ap: {},
+      read: {},
+      sel: null,
       pri: mock.priorities.map((p) => p.id),
       messages: mock.chat.opening,
       muted: Object.fromEntries(mock.interests.map((i) => [i.label, !i.on])),
@@ -144,7 +138,7 @@ class App extends Component {
   }
 
   async runEa(kind) {
-    this.setState({ posting: true });
+    this.setState({ posting: true, runError: '' });
     try {
       const res = await fetch('/run', {
         method: 'POST',
@@ -154,6 +148,7 @@ class App extends Component {
       if (!res.ok) throw new Error(`Run request returned ${res.status}`);
     } catch (err) {
       console.error(err);
+      this.setState({ runError: 'The EA could not be started. Please try again.' });
     } finally {
       this.setState({ posting: false });
       this.load();
@@ -236,16 +231,7 @@ class App extends Component {
     }
   }
 
-  // — approvals and chat (placeholder behaviour) —
-
-  setAp(id, v) {
-    this.setState((s) => ({ ap: { ...s.ap, [id]: v } }));
-  }
-
-  approve(id) {
-    this.setAp(id, 'executing');
-    this.later(() => this.setAp(id, 'completed'), 2600);
-  }
+  // — chat (sample behaviour) —
 
   send(text) {
     if (!text.trim()) return;
@@ -294,8 +280,8 @@ class App extends Component {
 
   /** Values several sections share. */
   derive() {
-    const { data, ap, read, sel } = this.state;
-    const mock = { ...data.mock, events: [], allDay: [], upNext: { title: 'No upcoming events', note: 'Google Calendar' } };
+    const { data } = this.state;
+    const mock = { ...data.mock, mail: [], events: [], allDay: [], upNext: { title: 'No upcoming events', note: 'Google Calendar' } };
     const now = brisbane(this.state.now);
     const todayIdx = dowOf(now);
     const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - todayIdx * DAY_MS);
@@ -328,9 +314,8 @@ class App extends Component {
       title: calendar.status === 'error' ? 'Calendar unavailable' : 'Calendar not connected',
       note: calendar.status === 'error' ? 'Trying again automatically' : 'Connect Google Calendar',
     };
-    const stateOf = (m) => (m.approveLabel ? ap[m.id] : m.failed ? 'failed' : 'fyi');
-    const pending = Object.values(ap).filter((x) => x === 'pending').length;
-    const unread = mock.mail.filter((m) => !read[m.id] && m.id !== sel).length;
+    const pending = 0;
+    const unread = data.findings.items.filter((f) => f.status === 'new').length;
     const latest = data.runs[0];
     const workforce = [
       {
@@ -348,7 +333,7 @@ class App extends Component {
       ...mock.workforce,
     ];
     const hour = now.getUTCHours() + now.getUTCMinutes() / 60;
-    return { mock, now, todayIdx, week, hour, stateOf, pending, unread, workforce };
+    return { mock, now, todayIdx, week, hour, pending, unread, workforce };
   }
 
   renderNav(v) {
@@ -422,7 +407,7 @@ class App extends Component {
             <span class="kbd">⌘K</span>
           </form>
         </div>
-        <span class="sample" title="Only the brief, the EA runs and the links are real. Everything else is placeholder content until the database is ready, and nothing on this page books, buys or sends anything.">Sample data</span>
+        <span class="sample" title="The brief, calendar, email findings, EA runs and links are live. Lifestyle cards and chat are samples.">Some sample cards</span>
         <span class="clock fs13 muted nowrap">${clock}</span>
       </header>
     `;
@@ -433,7 +418,7 @@ class App extends Component {
       <main class="main">
         <section class="col" style="gap: 10px;" aria-label="Live Executive Assistant">
           <h2>Executive Assistant</h2>
-          <p class="fs14 muted">Generate a brief from your connected email and calendars. Calendar events are live; other dashboard cards contain sample data.</p>
+          <p class="fs14 muted">Generate a brief from your connected email and calendars. Calendar events and email findings are live; lifestyle cards and chat contain sample data.</p>
           ${this.state.data.agentsError && html`<p class="fs14 coral">The agent service isn't reachable right now.</p>`}
           <div class="row wrap">
             <button class="btn btn-primary" disabled=${this.state.posting || this.state.data.busy || this.state.data.agentsError} onClick=${() => { this.openView('briefing'); this.runEa('morning_brief'); }}>${this.state.posting || this.state.data.busy ? 'EA is running…' : 'Run EA now'}</button>
@@ -529,56 +514,13 @@ class App extends Component {
   }
 
   renderDecision(v) {
-    const kd = v.mock.keyDecision;
-    const mail = v.mock.mail.find((m) => m.id === kd.mailId);
-    if (!mail) return null;
-    const st = this.state.ap[mail.id];
-    const stepIdx = { pending: 1, executing: 2, completed: 4, rejected: 1, failed: 2 }[st];
-    const labels = kd.steps.map((l, i) => (i === 1 && st === 'rejected' ? 'You declined' : i === 2 && st === 'failed' ? 'Booking failed' : l));
-    const deadline = { pending: kd.deadline, completed: 'Booked', rejected: 'Declined' }[st] ?? 'In progress';
-    const settled = { executing: 'Booking now, not yet confirmed', completed: kd.completed, failed: 'Booking failed. Nothing was charged.', rejected: kd.rejected }[st];
-    const others = Math.max(0, v.pending - (st === 'pending' ? 1 : 0));
-    return html`
-      <section class="decision">
-        <div class="between wrap" style="align-items: center;">
-          <span class="fs12 steel">Today's key decision · ranked by Moniqr</span>
-          <span class="deadline">${deadline}</span>
-        </div>
-        <h2>${mail.subject}</h2>
-        <div class="col" style="gap: 4px;">
-          <span class="fs12 dim">Why this one first</span>
-          <span class="fs14 text pretty" style="line-height: 1.55;">${kd.why}</span>
-        </div>
-        <div class="steps">
-          ${labels.map((label, i) => {
-            const bar = i < stepIdx ? 'var(--a300)' : i === stepIdx && st !== 'rejected' ? 'var(--accent-2)' : 'color-mix(in srgb, var(--n100) 12%, transparent)';
-            return html`<div>
-              <div class="seg" style=${`background: ${bar};`}></div>
-              <span class=${`fs12 ${i <= stepIdx ? 'bright' : 'muted'}`} style="line-height: 1.3;">${label}</span>
-            </div>`;
-          })}
-        </div>
-        ${st === 'pending'
-          ? html`<div class="row wrap">
-              <button class="btn btn-primary" style="border-color: var(--a300); padding: 8px 16px;" onClick=${() => this.approve(mail.id)}>${mail.approveLabel}</button>
-              <button class="btn btn-secondary" style="padding: 8px 16px;" onClick=${() => this.setAp(mail.id, 'rejected')}>Decline</button>
-              <span class="fs13 steel" style="cursor: pointer;" onClick=${() => this.openMail(mail.id, true)}>Details in inbox</span>
-            </div>`
-          : html`<div class="row wrap" style="gap: 10px;">
-              <span class="fs13 soft">${settled}</span>
-              ${(st === 'rejected' || st === 'failed') &&
-              html`<button class="btn btn-ghost" style="color: var(--a300);" onClick=${() => (st === 'failed' ? this.approve(mail.id) : this.setAp(mail.id, 'pending'))}>
-                ${st === 'failed' ? 'Retry' : 'Undo'}
-              </button>`}
-            </div>`}
-        <span class="fs12 dim">${others} other decision${others === 1 ? '' : 's'} in your inbox can wait until tonight</span>
-      </section>
-    `;
-  }
-
-  openMail(id, scroll = false) {
-    this.setState((s) => ({ sel: id, read: { ...s.read, [id]: true } }));
-    if (scroll) document.getElementById('inbox')?.scrollIntoView({ behavior: 'smooth' });
+    const findings = this.state.data.findings.items.filter((f) => f.status === 'new');
+    return html`<section class="decision col" style="gap: 12px;">
+      <span class="fs12 steel">From your email</span>
+      <h2>${this.state.data.findingsError ? 'Admin inbox unavailable' : findings.length ? `${findings.length} finding${findings.length === 1 ? '' : 's'} to review` : 'Your admin inbox'}</h2>
+      <p class="fs14 soft">Review source-linked deadlines, commitments and messages below. These are findings to read; no external action has been taken.</p>
+      <button class="btn btn-secondary" onClick=${() => document.getElementById('inbox')?.scrollIntoView({ behavior: 'smooth' })}>Open admin inbox</button>
+    </section>`;
   }
 
   priorityDefs(v) {
@@ -894,110 +836,93 @@ class App extends Component {
     return Math.floor((v.now.getTime() - Date.UTC(v.now.getUTCFullYear(), 0, 1)) / DAY_MS);
   }
 
+  async updateFinding(id, status) {
+    if (this.state.findingSaving) return;
+    this.setState({ findingSaving: true, findingError: '' });
+    try {
+      const res = await fetch(`/findings/${id}/status`, {
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ status }),
+      });
+      if (!res.ok) throw new Error(`Could not save (${res.status}).`);
+      await this.load();
+    } catch (err) { this.setState({ findingError: 'Your change could not be saved. Please try again.' }); }
+    finally { this.setState({ findingSaving: false }); }
+  }
+
   renderInbox(v) {
-    const { mock } = v;
-    const { filter, read, sel } = this.state;
-    const shown = mock.mail.filter((m) => filter === 'all' || (filter === 'dec' ? !!m.approveLabel : !m.approveLabel));
-    const filters = [
-      ['all', 'All'],
-      ['dec', `Decisions${v.pending ? ` · ${v.pending}` : ''}`],
-      ['fyi', 'Updates'],
-    ];
-    const m = mock.mail.find((x) => x.id === sel) ?? mock.mail[0];
-    const st = v.stateOf(m);
-    const [stateLabel, chipBg, chipFg] = STATUS[st];
-    const settled = {
-      executing: 'Working on it, not yet confirmed',
-      completed: `Confirmed by ${m.from}`,
-      failed: 'Something went wrong. Nothing was charged.',
-      rejected: `${m.from} was told no`,
-    }[st];
+    const { data, filter, sel, findingSaving, findingError } = this.state;
+    const { items, scan, total } = data.findings;
+    const labels = { bill: 'Bill or deadline', commitment: 'Commitment', reply: 'Reply needed' };
+    const statuses = { new: 'New', reviewed: 'Reviewed', dismissed: 'Dismissed' };
+    const shown = items.filter((f) => filter === 'all' || f.status === filter);
+    const selected = shown.find((f) => f.id === sel) ?? shown[0];
+    const when = (iso) => new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Brisbane', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+    }).format(new Date(iso));
+    const running = scan && ['queued', 'running'].includes(scan.run_status);
+    const complete = scan?.status === 'completed' && scan.run_status === 'done';
+    const partial = scan?.status === 'partial' && scan.run_status === 'done';
+    const scanLabel = data.findingsError ? 'Inbox unavailable. Retrying automatically.'
+      : !scan ? 'No email scan yet. Run the EA to scan your inbox.'
+      : running ? 'Email scan queued or running…'
+      : complete ? `Last scan completed ${when(scan.updated_at)}`
+      : partial ? 'Last scan was partial. Some email could not be read; findings may be incomplete.'
+      : 'Last scan did not complete. Existing findings are kept; run the EA to try again.';
     return html`
       <section id="inbox" class="col" style="gap: 12px;">
-        <div class="between wrap" style="align-items: center; gap: 12px;">
-          <div class="row" style="align-items: baseline; gap: 10px;">
-            <h2 style="font-size: 20px;">Inbox</h2>
-            <span class="fs13 muted">${v.pending} need a decision · ${v.unread} unread</span>
-          </div>
-          <div class="filters">
-            ${filters.map(
-              ([id, label]) => html`<span
-                style=${filter === id ? on('color-mix(in srgb, var(--n100) 10%, transparent)') : on('transparent', 'var(--n400)')}
-                onClick=${() => this.setState({ filter: id })}
-                >${label}</span
-              >`,
-            )}
-          </div>
+        <div class="between wrap" style="gap: 12px;">
+          <div class="col"><h2 style="font-size: 20px;">Admin inbox</h2>
+            <span class="fs13 muted">${v.unread} new · Gmail findings · Brisbane time</span></div>
+          <button class="btn btn-secondary" disabled=${this.state.posting || data.busy} onClick=${() => this.runEa('morning_brief')}>${data.busy ? 'EA running…' : 'Scan email'}</button>
         </div>
-        <div class="inbox">
-          <div class="mail-list">
-            ${shown.map((x) => {
-              const xs = v.stateOf(x);
-              const unread = !read[x.id] && x.id !== sel;
-              const showTag = xs !== 'fyi';
-              return html`<div class=${`mail${x.id === sel ? ' sel' : ''}`} key=${x.id} onClick=${() => this.openMail(x.id)}>
-                <span class="dot" style=${`background: ${unread ? 'var(--accent-2)' : 'transparent'};`}></span>
-                <div class="col" style="gap: 1px; min-width: 0;">
-                  <div class="row" style="min-width: 0;">
-                    <span class="fs13 dim nowrap">${x.from}</span>
-                    ${showTag && html`<span class="mail-tag" style=${on(STATUS[xs][1], STATUS[xs][2])}>${STATUS[xs][0]}</span>`}
-                  </div>
-                  <span class="fs14 ellipsis" style=${`color: ${unread ? 'var(--n100)' : 'var(--n300)'}; font-weight: ${unread ? 500 : 400};`}>${x.subject}</span>
-                  <span class="fs13 muted ellipsis">${x.preview}</span>
-                </div>
-                <span class="fs12 muted nowrap">${x.time}</span>
-              </div>`;
-            })}
-          </div>
-          <div class="reader">
-            <div class="row wrap" style="gap: 10px;">
-              <span class="avatar">${m.from[0]}</span>
-              <div class="col grow">
-                <span class="fs14 text">${m.from}</span>
-                <span class="fs12 muted">${m.time} · to you</span>
-              </div>
-              <span class="fs12 nowrap" style=${`padding: 3px 10px; border-radius: 10px; ${on(chipBg, chipFg)}`}>${stateLabel}</span>
+        <p class="fs12 muted" role="status">${scanLabel}</p>
+        ${scan?.last_success_at && !complete && html`<p class="fs12 muted">Last successful scan: ${when(scan.last_success_at)}</p>`}
+        ${this.state.runError && html`<p class="fs13 coral" role="alert">${this.state.runError}</p>`}
+        ${findingError && html`<p class="fs13 coral" role="alert">${findingError}</p>`}
+        <div class="filters" role="group" aria-label="Filter findings">
+          ${['all', 'new', 'reviewed', 'dismissed'].map((id) => html`<button class="btn btn-ghost sm" aria-pressed=${filter === id}
+            style=${filter === id ? on('var(--wash-8)') : ''} onClick=${() => this.setState({ filter: id })}>${id === 'all' ? 'All' : statuses[id]}</button>`)}
+        </div>
+        ${total > items.length && html`<p class="fs12 muted">Showing the first ${items.length} of ${total} findings, with new findings first.</p>`}
+        ${!shown.length ? html`<div class="tile panel"><p class="fs14 soft">${data.findingsError ? 'Findings could not load.'
+          : items.length ? 'No findings in this filter.' : complete ? 'No saved findings. The latest scan completed.'
+          : 'No saved findings yet. A successful scan is needed before this inbox is up to date.'}</p></div>` : html`
+          <div class="inbox">
+            <div class="mail-list" aria-label="Email findings">
+              ${shown.map((f) => html`<button class=${`mail finding-row${f.id === selected.id ? ' sel' : ''}`} key=${f.id}
+                aria-pressed=${f.id === selected.id} onClick=${() => this.setState({ sel: f.id })}>
+                <span class="dot" style=${`background: ${f.status === 'new' ? 'var(--accent-2)' : 'transparent'};`}></span>
+                <span class="col" style="gap: 4px; min-width: 0;">
+                  <span class="fs12 muted">${labels[f.category]} · ${statuses[f.status]}</span>
+                  <span class="fs14 text ellipsis">${f.subject}</span>
+                  <span class="fs13 muted ellipsis">${f.summary}</span>
+                </span>
+              </button>`)}
             </div>
-            <h3>${m.subject}</h3>
-            <p class="fs14 soft pretty" style="line-height: 1.65;">${m.body}</p>
-            ${m.facts?.length > 0 &&
-            html`<div class="facts">
-              ${m.facts.map(([k, val]) => html`<div><span class="fs12 muted">${k}</span><span class="fs13 text">${val}</span></div>`)}
-            </div>`}
-            ${m.deals &&
-            html`<div class="col">
-              ${mock.deals.map(
-                (d) => html`<div class="deal">
-                  <div class="col" style="flex: 1 1 200px; min-width: 0;">
-                    <span class="fs14 text">${d.brand} · ${d.offer}</span>
-                    <span class="fs12 muted">${d.why} · ${d.ends}</span>
-                  </div>
-                  <button class="btn btn-secondary sm nowrap" onClick=${() => this.setState((s) => ({ deals: { ...s.deals, [d.id]: true } }))}>
-                    ${this.state.deals[d.id] ? '✓ Reminder set' : 'Remind me'}
-                  </button>
-                </div>`,
-              )}
-            </div>`}
-            <div style="flex: 1;"></div>
-            ${st === 'pending' &&
-            html`<div class="row wrap">
-              <button class="btn btn-primary" style="padding: 8px 16px;" onClick=${() => this.approve(m.id)}>${m.approveLabel}</button>
-              <button class="btn btn-secondary" style="padding: 8px 16px;" onClick=${() => this.setAp(m.id, 'rejected')}>Decline</button>
-              <button class="btn btn-ghost" onClick=${() => this.send(`Tell me more about: ${m.subject}`)}>Ask Moniqr</button>
-            </div>`}
-            ${m.approveLabel &&
-            st !== 'pending' &&
-            html`<div class="row" style="gap: 10px;">
-              <span class="fs13 dim">${settled}</span>
-              ${(st === 'rejected' || st === 'failed') &&
-              html`<button class="btn btn-ghost" onClick=${() => (st === 'failed' ? this.approve(m.id) : this.setAp(m.id, 'pending'))}>
-                ${st === 'failed' ? 'Retry' : 'Undo'}
-              </button>`}
-            </div>`}
-          </div>
-        </div>
-      </section>
-    `;
+            <article class="reader" aria-label="Finding details">
+              <span class="fs12 steel">${labels[selected.category]} · ${statuses[selected.status]}</span>
+              <h3>${selected.subject}</h3>
+              <p class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${selected.summary}</p>
+              <div class="col fs12 muted" style="overflow-wrap: anywhere;">
+                <span>Sender as shown: ${selected.sender || '(not stated)'}</span>
+                <span>Received ${when(selected.received_at)}</span>
+              </div>
+              <div class="col"><span class="fs12 muted">Source evidence</span>
+                <blockquote class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${selected.evidence}</blockquote></div>
+              <p class="fs13 dim">${selected.deadline_text ? `Date/time as stated: ${selected.deadline_text}` : 'No date or time was extracted. Check the source before acting.'}</p>
+              ${selected.missing_details.length > 0 && html`<div class="col"><span class="fs12 muted">Missing or uncertain</span>
+                <ul class="fs13 soft">${selected.missing_details.map((d) => html`<li>${d}</li>`)}</ul></div>`}
+              <a class="fs13 steel" href=${`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(selected.thread_id)}`} target="_blank" rel="noopener noreferrer">Open source in Gmail ↗</a>
+              <div class="row wrap">
+                ${selected.status !== 'reviewed' && html`<button class="btn btn-secondary" disabled=${findingSaving} onClick=${() => this.updateFinding(selected.id, 'reviewed')}>Mark reviewed</button>`}
+                ${selected.status !== 'dismissed' && html`<button class="btn btn-ghost" disabled=${findingSaving} onClick=${() => this.updateFinding(selected.id, 'dismissed')}>Dismiss</button>`}
+                ${selected.status !== 'new' && html`<button class="btn btn-ghost" disabled=${findingSaving} onClick=${() => this.updateFinding(selected.id, 'new')}>Mark new</button>`}
+              </div>
+              <span class="fs12 muted">This updates Moniqr only. It does not change your email, pay a bill or create a calendar event.</span>
+            </article>
+          </div>`}
+      </section>`;
   }
 
   renderGlance(v) {

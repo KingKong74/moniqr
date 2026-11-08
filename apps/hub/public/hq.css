@@ -150,6 +150,8 @@ input::placeholder { color: var(--n500); }
 .mail:hover { background: var(--wash-6); }
 .mail.sel, .mail.sel:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .mail .dot { margin-top: 7px; }
+.finding-row { width: 100%; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; grid-template-columns: 8px minmax(0, 1fr); }
+.reader blockquote { margin: 0; border-left: 2px solid var(--a300); padding-left: 12px; }
 .mail-tag { font-size: 11px; padding: 1px 8px; border-radius: 9px; white-space: nowrap; }
 .reader { flex: 1.4 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; background: color-mix(in srgb, var(--n100) 3%, transparent); }
 .reader h3 { font-size: 20px; line-height: 1.3; }

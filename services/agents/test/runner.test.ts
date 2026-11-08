@@ -28,10 +28,10 @@ test('Codex has no native execution, file edits, web, apps or ambient project in
   assert.ok(!args.join(' ').includes('secret'));
 });
 
-test('Google allowlist contains only reads and writing the brief', () => {
+test('Google allowlist contains reads and local brief/finding writes only', () => {
   assert.deepEqual(allowedTools({ google: false }), ['mcp__agents__write_brief']);
   assert.deepEqual(allowedTools({ google: true }), ['mcp__agents__write_brief', 'mcp__agents__list_calendars',
-    'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email']);
+    'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email', 'mcp__agents__save_email_finding']);
 });
 
 test('Codex JSONL failures, incomplete output and zero-exit error events fail closed', () => {
@@ -173,7 +173,7 @@ describe('runner', { skip: skipReason }, () => {
     });
     assert.equal(outcome.status, 'done', outcome.error);
     const seen = JSON.parse((outcome.result as { result: string }).result);
-    assert.deepEqual(seen.tools.sort(), ['get_events', 'list_calendars', 'read_email', 'search_email', 'write_brief']);
+    assert.deepEqual(seen.tools.sort(), ['get_events', 'list_calendars', 'read_email', 'save_email_finding', 'search_email', 'write_brief']);
     assert.ok(!seen.envKeys.some((k: string) => k.startsWith('GOOGLE_')), 'Google credentials stay with the MCP server');
     assert.equal((await finishRun(pool, claimed.run.id, outcome)).status, 'done');
   });

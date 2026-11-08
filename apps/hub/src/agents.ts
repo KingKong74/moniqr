@@ -38,7 +38,37 @@ export interface CalendarData {
   events: CalendarEvent[];
 }
 
+export interface EmailFinding {
+  id: number;
+  message_id: string;
+  thread_id: string;
+  category: 'bill' | 'commitment' | 'reply';
+  sender: string;
+  subject: string;
+  received_at: string;
+  summary: string;
+  evidence: string;
+  deadline_text: string;
+  missing_details: string[];
+  status: 'new' | 'reviewed' | 'dismissed';
+}
+
+export interface FindingsData {
+  items: EmailFinding[];
+  total: number;
+  scan: null | {
+    run_id: number;
+    run_status: 'queued' | 'running' | 'done' | 'failed';
+    status: 'scanning' | 'completed' | 'partial' | 'failed' | null;
+    updated_at: string | null;
+    last_success_at: string | null;
+    failures: number | null;
+  };
+}
+
 export interface AgentsClient {
+  findings(): Promise<FindingsData>;
+  setFindingStatus(id: number, status: EmailFinding['status']): Promise<void>;
   calendar(): Promise<CalendarData>;
   latestBrief(): Promise<Brief | null>;
   recentRuns(limit: number): Promise<RunSummary[]>;
@@ -61,6 +91,8 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
   };
 
   return {
+    findings: () => call<FindingsData>('GET', '/findings'),
+    setFindingStatus: async (id, status) => { await call('PATCH', `/findings/${id}`, { status }); },
     calendar: () => call<CalendarData>('GET', '/calendar'),
     latestBrief: async () => (await call<{ brief: Brief | null }>('GET', '/briefs/latest')).brief,
     recentRuns: async (limit) => (await call<{ runs: RunSummary[] }>('GET', `/runs?limit=${limit}`)).runs,

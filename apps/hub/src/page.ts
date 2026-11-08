@@ -1,4 +1,4 @@
-import type { Brief, RunSummary, CalendarData } from './agents.js';
+import type { Brief, RunSummary, CalendarData, FindingsData } from './agents.js';
 import { LINKS } from './links.js';
 import { escapeHtml as esc, renderMarkdown } from './markdown.js';
 import { MOCK } from './mock.js';
@@ -33,17 +33,21 @@ export interface HqInput {
   /** Set when the agent API couldn't be reached. */
   agentsError: boolean;
   calendar?: CalendarData;
+  findings?: FindingsData;
+  findingsError?: boolean;
 }
 
 /**
- * Everything the HQ page draws, as JSON for /api/hq. The brief, runs and links are real; the
- * rest is MOCK until the agent service stores it. The brief's Markdown is rendered here so the
+ * Everything the HQ page draws, as JSON for /api/hq. Briefs, calendar, findings, runs and links
+ * are real; lifestyle cards are still samples. The brief's Markdown is rendered here so the
  * browser only ever receives escaped HTML.
  */
 export function hqData(d: HqInput) {
   return {
     email: d.email,
     calendar: d.calendar ?? { status: 'disconnected', events: [] },
+    findings: d.findings ?? { items: [], scan: null, total: 0 },
+    findingsError: d.findingsError ?? false,
     agentsError: d.agentsError,
     brief: d.brief && {
       kind: kindLabel(d.brief.kind),
@@ -60,7 +64,7 @@ export function hqData(d: HqInput) {
     })),
     busy: d.runs.some((r) => r.status === 'queued' || r.status === 'running'),
     links: LINKS,
-    mock: MOCK,
+    mock: { ...MOCK, mail: [], readMail: [] },
   };
 }
 

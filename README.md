@@ -65,6 +65,14 @@ The EA reads calendars and email with one refresh token limited to `calendar.rea
 
 Gmail is a restricted scope, so Google shows an "unverified app" warning at consent. That is expected for a personal client: choose Advanced, then continue. Leave both permission boxes ticked; `google-auth` refuses a token that doesn't hold exactly these two scopes.
 
+## Admin inbox
+
+Morning briefs and weekly look-aheads can save email findings: bills/deadlines, commitments and messages needing a reply. The `save_email_finding` MCP tool accepts only messages read in that run, and its evidence and date/time wording must quote the message body. Sender, subject, received time and source identity come from the broker's Gmail read, not model-supplied metadata. Dates remain as source wording; ambiguous or missing details stay visible rather than becoming inferred calendar dates.
+
+Findings live in Postgres, deduplicated by message and category. Re-scanning updates their content while preserving your reviewed/dismissed state. The hub's **Admin inbox** shows the source, evidence and scan status, and **Scan email** queues a morning-brief run. A scan's coverage is bounded by the existing Gmail searches and result limits; it is not a complete mailbox audit. Partial and failed scans retain existing findings, and a run that never searched email does not count as a successful scan.
+
+This is the first daily-admin slice: findings are notes, not executable approvals. Reviewing or dismissing one changes Moniqr only. Calendar creation, payments, sending email and attachment downloads are not implemented here. The new migration runs on API startup, as existing migrations do.
+
 ## Deploying on Dokploy
 
 `docker-compose.yml` defines four services: `postgres`, `agents-api`, `agents-runner` and `hub`. Create a Compose app in Dokploy pointing at this repo, set the variables from `.env.example`, and deploy. Only `hub` gets domains (`moniqr.com` and `www.moniqr.com`); `agents-api` stays on the compose network.

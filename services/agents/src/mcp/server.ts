@@ -8,6 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { gmail, MAX_SEARCH_RESULTS } from '../gmail.js';
 import { googleCalendar, googleCredentialsFromEnv } from '../google.js';
+import { EmailObservations, findingToolInput } from './findings.js';
 
 const apiUrl = process.env.AGENTS_API_URL;
 const runId = process.env.RUN_ID;
@@ -22,12 +23,18 @@ async function post(path: string, body: unknown): Promise<{ ok: boolean; status:
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${runToken}` },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
   });
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, data };
 }
 
 const server = new McpServer({ name: 'agents', version: '0.1.0' });
+const observations = new EmailObservations();
+const saveScan = async (final = false) => {
+  const response = await post(`/runs/${runId}/email-scan`, observations.scan(final));
+  if (!response.ok) throw new Error(`Email scan state could not be saved (${response.status}).`);
+};
 
 server.registerTool(
   'write_brief',
@@ -42,6 +49,11 @@ server.registerTool(
     },
   },
   async ({ body_md, summary }) => {
+    // Finalise observed mail coverage before saving the brief; errors must not look like an empty inbox.
+    if (google && (observations.searches || observations.messagesRead || observations.failures)) {
+      try { await saveScan(true); }
+      catch (err) { return { isError: true, content: [{ type: 'text', text: String(err) }] }; }
+    }
     const res = await post(`/runs/${runId}/brief`, { body_md, summary });
     if (!res.ok) {
       return {
@@ -124,8 +136,12 @@ if (google) {
     async ({ query, max }) => {
       try {
         const messages = await mail.search(query, max);
+        observations.searches++;
+        await saveScan();
         return { content: [{ type: 'text', text: JSON.stringify({ note: UNTRUSTED_MAIL, messages }) }] };
       } catch (err) {
+        observations.failures++;
+        await saveScan().catch(() => {});
         return failed(err);
       }
     },
@@ -145,12 +161,34 @@ if (google) {
     async ({ id }) => {
       try {
         const message = await mail.read(id);
+        observations.remember(message);
+        await saveScan();
         return { content: [{ type: 'text', text: JSON.stringify({ note: UNTRUSTED_MAIL, message }) }] };
       } catch (err) {
+        observations.failures++;
+        await saveScan().catch(() => {});
         return failed(err);
       }
     },
   );
+
+  server.registerTool('save_email_finding', {
+    title: 'Save email finding',
+    description: 'Save a useful bill/deadline, commitment or reply-needed finding from a message read in this run. ' +
+      'One finding per message and category; repeat scans update it without undoing Bailey’s review or dismissal. ' +
+      'Evidence and deadline wording must be exact body quotes. This only saves a note; it cannot send, pay or create calendar events. ' + UNTRUSTED_MAIL,
+    inputSchema: findingToolInput,
+  }, async (input) => {
+    try {
+      const res = await post(`/runs/${runId}/findings`, observations.finding(input));
+      if (!res.ok) throw new Error(`Finding could not be saved (${res.status}).`);
+      return { content: [{ type: 'text', text: `Finding saved (id ${res.data.finding.id}, ${res.data.finding.status}).` }] };
+    } catch (err) {
+      observations.failures++;
+      await saveScan().catch(() => {});
+      return failed(err);
+    }
+  });
 }
 
 await server.connect(new StdioServerTransport());

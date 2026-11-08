@@ -10,8 +10,14 @@ import { formatWhen } from '../src/page.js';
 const ORIGIN = 'https://moniqr.com';
 const queued: RunKind[] = [];
 let failAgents = false;
+const decisions: unknown[] = [];
 
 const agents: AgentsClient = {
+  findings: async () => {
+    if (failAgents) throw new Error('down');
+    return { items: [], scan: null, total: 0 };
+  },
+  setFindingStatus: async (id, status) => { decisions.push({ id, status }); },
   calendar: async () => {
     if (failAgents) throw new Error('down');
     return { status: 'connected', events: [{ calendar: 'Personal', title: 'Meeting', start: '2026-11-09T09:00:00+10:00', end: '2026-11-09T10:00:00+10:00', allDay: false }] };
@@ -78,6 +84,7 @@ test('everything else needs a valid Access token', async () => {
   assert.equal((await get('/hq.css')).status, 403);
   assert.equal((await get('/hq.js')).status, 403);
   assert.equal((await get('/api/hq')).status, 403);
+  assert.equal((await get('/findings/1/status')).status, 403);
 });
 
 test('the page shell loads its script and styles from the hub only', async () => {
@@ -99,6 +106,8 @@ test('HQ data carries the brief as escaped HTML, the runs and the placeholder co
   assert.equal(res.status, 200);
   const data = await res.json();
   assert.equal(data.calendar.status, 'connected');
+  assert.deepEqual(data.findings, { items: [], scan: null, total: 0 });
+  assert.equal(data.findingsError, false);
   assert.equal(data.calendar.events[0].title, 'Meeting');
   assert.equal(data.email, 'bailey@example.com');
   assert.equal(data.agentsError, false);
@@ -107,7 +116,7 @@ test('HQ data carries the brief as escaped HTML, the runs and the placeholder co
   assert.equal(data.brief.when, 'Tue 27 Oct, 6:30am');
   assert.equal(data.runs[0].kind, 'Plumbing test');
   assert.equal(data.busy, false);
-  assert.ok(data.mock.mail.length > 0);
+  assert.deepEqual(data.mock.mail, [], 'sample emails must not masquerade as findings');
 });
 
 test('HQ data still loads when the agent API is down', async () => {
@@ -119,6 +128,7 @@ test('HQ data still loads when the agent API is down', async () => {
     assert.equal(data.agentsError, true);
     assert.equal(data.brief, null);
     assert.equal(data.calendar.status, 'error');
+    assert.equal(data.findingsError, true);
     assert.deepEqual(data.calendar.events, []);
     assert.deepEqual(data.runs, []);
   } finally {
@@ -157,4 +167,18 @@ test('run now refuses cross-site posts and unknown kinds', async () => {
 test('dates read in Brisbane time', () => {
   assert.equal(formatWhen('2026-10-26T20:30:00Z'), 'Tue 27 Oct, 6:30am');
   assert.equal(formatWhen('2026-10-27T03:05:00Z'), 'Tue 27 Oct, 1:05pm');
+});
+
+test('finding decisions require sign-in, same origin and a supported status', async () => {
+  const decide = (id: string, status: string, headers: Record<string, string>) => fetch(`${base}/findings/${id}/status`, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers },
+    body: new URLSearchParams({ status }),
+  });
+  assert.equal((await decide('1', 'reviewed', { origin: ORIGIN })).status, 403);
+  assert.equal((await decide('1', 'reviewed', authed)).status, 403);
+  assert.equal((await decide('1', 'reviewed', { ...authed, origin: 'https://evil.example' })).status, 403);
+  assert.equal((await decide('bad', 'reviewed', { ...authed, origin: ORIGIN })).status, 400);
+  assert.equal((await decide('1', 'approved', { ...authed, origin: ORIGIN })).status, 400);
+  assert.equal((await decide('1', 'reviewed', { ...authed, origin: ORIGIN })).status, 204);
+  assert.deepEqual(decisions.splice(0), [{ id: 1, status: 'reviewed' }]);
 });

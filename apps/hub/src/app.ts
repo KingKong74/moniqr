@@ -72,7 +72,9 @@ export function createApp(opts: HubOptions) {
   });
 
   app.get('/api/hq', async (_req, res) => {
-    const [brief, runs, calendar] = await Promise.allSettled([opts.agents.latestBrief(), opts.agents.recentRuns(5), opts.agents.calendar()]);
+    const [brief, runs, calendar, findings] = await Promise.allSettled([
+      opts.agents.latestBrief(), opts.agents.recentRuns(5), opts.agents.calendar(), opts.agents.findings(),
+    ]);
     const agentsError = brief.status === 'rejected' || runs.status === 'rejected';
     if (agentsError) console.error('[hub] agent API unreachable', brief.status === 'rejected' ? brief.reason : runs);
     res.json(
@@ -82,8 +84,21 @@ export function createApp(opts: HubOptions) {
         runs: runs.status === 'fulfilled' ? runs.value : [],
         agentsError,
         calendar: calendar.status === 'fulfilled' ? calendar.value : { status: 'error', events: [] },
+        findings: findings.status === 'fulfilled' ? findings.value : undefined,
+        findingsError: findings.status === 'rejected',
       }),
     );
+  });
+
+  app.post('/findings/:id/status', express.urlencoded({ extended: false, limit: '1kb' }), async (req, res) => {
+    if (req.header('origin') !== canonical.origin) return void res.status(403).send('Cross-site request refused.');
+    const id = Number(req.params.id);
+    const status = req.body?.status;
+    if (!Number.isSafeInteger(id) || id <= 0 || !['new', 'reviewed', 'dismissed'].includes(status)) {
+      return void res.status(400).send('Invalid finding status.');
+    }
+    await opts.agents.setFindingStatus(id, status);
+    res.status(204).end();
   });
 
   app.post('/run', express.urlencoded({ extended: false, limit: '1kb' }), async (req, res) => {
