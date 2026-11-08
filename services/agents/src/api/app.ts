@@ -13,6 +13,7 @@ import {
 import { nextFireAfter } from '../scheduler.js';
 import { bearer, safeEqual } from '../tokens.js';
 import { findingInput, scanInput, listFindings, saveFinding, saveScan } from '../findings.js';
+import { proposalInput, decisionInput, proposeAction, listActions, getAction, decideAction } from '../actions.js';
 
 function isValidCron(cron: string): boolean {
   try {
@@ -34,6 +35,7 @@ export interface AppOptions {
   /** Runs left "running" longer than this are failed on the next claim. */
   staleRunMs: number;
   calendar?: { listEvents(start: Date, end: Date): Promise<unknown[]> } | null;
+  actionCalendarId?: string;
 }
 
 const idParam = z.coerce.number().int().positive();
@@ -55,6 +57,13 @@ export function createApp(opts: AppOptions) {
   };
   const hub = requireToken(opts.apiToken);
   const runner = requireToken(opts.runnerToken);
+
+  app.get('/actions', hub, async (_req, res) => { res.json(await listActions(pool, false, opts.actionCalendarId)); });
+  app.get('/actions/:id', hub, async (req, res) => { res.json(await getAction(pool, idParam.parse(req.params.id), opts.actionCalendarId)); });
+  app.post('/actions/:id/decision', hub, async (req, res) => {
+    const action = await decideAction(pool, idParam.parse(req.params.id), decisionInput.parse(req.body), opts.actionCalendarId);
+    res.json({ action });
+  });
 
   app.get('/findings', hub, async (_req, res) => {
     res.json(await listFindings(pool));
@@ -210,6 +219,21 @@ export function createApp(opts: AppOptions) {
   });
 
   // --- MCP server: writes scoped to one running run ---
+
+  app.get('/runs/:id/actions', async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const token = bearer(req.header('authorization'));
+    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    res.json(await listActions(pool, true, opts.actionCalendarId));
+  });
+
+  app.post('/runs/:id/actions', async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const token = bearer(req.header('authorization'));
+    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    const action = await proposeAction(pool, id, proposalInput.parse(req.body), opts.actionCalendarId);
+    res.status(201).json({ action });
+  });
 
   app.post('/runs/:id/findings', async (req, res) => {
     const id = idParam.parse(req.params.id);

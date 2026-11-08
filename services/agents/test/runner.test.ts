@@ -21,7 +21,7 @@ test('Codex has no native execution, file edits, web, apps or ambient project in
   const config = codexConfig({ command: 'node', args: ['server.js'], env: { RUN_TOKEN: 'secret' } }, { google: false }, catalogPath);
   for (const setting of ['shell_tool = false', 'view_image = false', 'web_search = "disabled"',
     'sandbox_mode = "read-only"', 'approval_policy = "never"', 'project_doc_max_bytes = 0', 'apps = false', 'plugins = false']) assert.ok(config.includes(setting), setting);
-  assert.ok(config.includes('enabled_tools = ["write_brief"]'));
+  assert.ok(config.includes('enabled_tools = ["write_brief","list_action_proposals"]'));
   const args = codexArgs('hello');
   assert.ok(args.includes('--ephemeral'));
   assert.ok(!args.some((a) => a.includes('bypass')));
@@ -29,9 +29,9 @@ test('Codex has no native execution, file edits, web, apps or ambient project in
 });
 
 test('Google allowlist contains reads and local brief/finding writes only', () => {
-  assert.deepEqual(allowedTools({ google: false }), ['mcp__agents__write_brief']);
-  assert.deepEqual(allowedTools({ google: true }), ['mcp__agents__write_brief', 'mcp__agents__list_calendars',
-    'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email', 'mcp__agents__save_email_finding']);
+  assert.deepEqual(allowedTools({ google: false }), ['mcp__agents__write_brief', 'mcp__agents__list_action_proposals']);
+  assert.deepEqual(allowedTools({ google: true }), ['mcp__agents__write_brief', 'mcp__agents__list_action_proposals', 'mcp__agents__list_calendars',
+    'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email', 'mcp__agents__save_email_finding', 'mcp__agents__propose_action']);
 });
 
 test('Codex JSONL failures, incomplete output and zero-exit error events fail closed', () => {
@@ -100,7 +100,8 @@ describe('runner', { skip: skipReason }, () => {
     assert.equal(outcome.status, 'done', outcome.error);
     const seen = JSON.parse((outcome.result as { result: string }).result);
 
-    assert.deepEqual(seen.tools, ['write_brief'], 'only write_brief is exposed');
+    assert.deepEqual(seen.tools.sort(), ['list_action_proposals', 'write_brief'], 'only local brief/approval tools are exposed without Google');
+    assert.equal(seen.proposals.isError, false, 'run-scoped pending proposals are readable without Google');
     assert.match(seen.first, /^Brief saved/);
     assert.equal(seen.second.isError, true, 'second brief refused');
     assert.match(seen.second.text, /409/);
@@ -173,7 +174,9 @@ describe('runner', { skip: skipReason }, () => {
     });
     assert.equal(outcome.status, 'done', outcome.error);
     const seen = JSON.parse((outcome.result as { result: string }).result);
-    assert.deepEqual(seen.tools.sort(), ['get_events', 'list_calendars', 'read_email', 'save_email_finding', 'search_email', 'write_brief']);
+    assert.deepEqual(seen.tools.sort(), ['get_events', 'list_action_proposals', 'list_calendars', 'propose_action', 'read_email', 'save_email_finding', 'search_email', 'write_brief']);
+    assert.equal(seen.invented.isError, true, 'the broker refuses an action without a saved finding from this run');
+    assert.match(seen.invented.text, /Save this finding in this run/);
     assert.ok(!seen.envKeys.some((k: string) => k.startsWith('GOOGLE_')), 'Google credentials stay with the MCP server');
     assert.equal((await finishRun(pool, claimed.run.id, outcome)).status, 'done');
   });

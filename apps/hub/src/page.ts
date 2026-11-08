@@ -1,4 +1,4 @@
-import type { Brief, RunSummary, CalendarData, FindingsData } from './agents.js';
+import type { Brief, RunSummary, CalendarData, FindingsData, ActionsData } from './agents.js';
 import { LINKS } from './links.js';
 import { escapeHtml as esc, renderMarkdown } from './markdown.js';
 import { MOCK } from './mock.js';
@@ -35,6 +35,8 @@ export interface HqInput {
   calendar?: CalendarData;
   findings?: FindingsData;
   findingsError?: boolean;
+  actions?: ActionsData;
+  actionsError?: boolean;
 }
 
 /**
@@ -48,6 +50,8 @@ export function hqData(d: HqInput) {
     calendar: d.calendar ?? { status: 'disconnected', events: [] },
     findings: d.findings ?? { items: [], scan: null, total: 0 },
     findingsError: d.findingsError ?? false,
+    actions: d.actions ?? { items: [], total: 0, pending: 0 },
+    actionsError: d.actionsError ?? false,
     agentsError: d.agentsError,
     brief: d.brief && {
       kind: kindLabel(d.brief.kind),

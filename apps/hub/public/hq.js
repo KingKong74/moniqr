@@ -1,8 +1,8 @@
 // HQ, the moniqr.com homepage. A port of the Personal OS HQ v4 design to Preact + htm, loaded as
 // one ES module so there's no build step. The server sends everything to draw from /api/hq:
-// the real brief, runs and links, plus placeholder content (data.mock) until the agent service
-// stores the rest. Approvals, chat replies, priorities, mood and habits only change this page's
-// state for now. Nothing here books, buys or sends anything.
+// live briefs, runs, calendar, findings and proposal decisions, plus sample lifestyle content
+// (data.mock). Approvals record a decision only; chat, priorities, mood and habits are samples.
+// Nothing here books, buys, sends or queues external actions.
 import { Component, html, render } from '/vendor/preact-htm.js';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -314,7 +314,7 @@ class App extends Component {
       title: calendar.status === 'error' ? 'Calendar unavailable' : 'Calendar not connected',
       note: calendar.status === 'error' ? 'Trying again automatically' : 'Connect Google Calendar',
     };
-    const pending = 0;
+    const pending = data.actionsError ? 0 : data.actions.pending;
     const unread = data.findings.items.filter((f) => f.status === 'new').length;
     const latest = data.runs[0];
     const workforce = [
@@ -407,7 +407,7 @@ class App extends Component {
             <span class="kbd">⌘K</span>
           </form>
         </div>
-        <span class="sample" title="The brief, calendar, email findings, EA runs and links are live. Lifestyle cards and chat are samples.">Some sample cards</span>
+        <span class="sample" title="The brief, calendar, email findings, proposal decisions, EA runs and links are live. Lifestyle cards and chat are samples.">Some sample cards</span>
         <span class="clock fs13 muted nowrap">${clock}</span>
       </header>
     `;
@@ -426,7 +426,7 @@ class App extends Component {
           </div>
         </section>
         <div class="hero">${this.renderCarousel(v)} ${this.renderDecision(v)}</div>
-        ${this.renderFocusCards(v)} ${this.renderInbox(v)} ${this.renderGlance(v)} ${this.renderCalendar(v)}
+        ${this.renderFocusCards(v)} ${this.renderActions()} ${this.renderInbox(v)} ${this.renderGlance(v)} ${this.renderCalendar(v)}
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px;">
           ${this.renderHabits(v)} ${this.renderMeals(v)} ${this.renderPeople(v)}
         </div>
@@ -514,12 +514,109 @@ class App extends Component {
   }
 
   renderDecision(v) {
-    const findings = this.state.data.findings.items.filter((f) => f.status === 'new');
     return html`<section class="decision col" style="gap: 12px;">
-      <span class="fs12 steel">From your email</span>
-      <h2>${this.state.data.findingsError ? 'Admin inbox unavailable' : findings.length ? `${findings.length} finding${findings.length === 1 ? '' : 's'} to review` : 'Your admin inbox'}</h2>
-      <p class="fs14 soft">Review source-linked deadlines, commitments and messages below. These are findings to read; no external action has been taken.</p>
-      <button class="btn btn-secondary" onClick=${() => document.getElementById('inbox')?.scrollIntoView({ behavior: 'smooth' })}>Open admin inbox</button>
+      <span class="fs12 steel">Your decisions</span>
+      <h2>${this.state.data.actionsError ? 'Action review unavailable' : v.pending ? `${v.pending} proposal${v.pending === 1 ? '' : 's'} to review` : 'No pending proposals'}</h2>
+      <p class="fs14 soft">Inspect the source and proposed details before deciding. Approval records your choice only; nothing is executed or queued for later.</p>
+      <button class="btn btn-secondary" onClick=${() => document.getElementById('actions')?.scrollIntoView({ behavior: 'smooth' })}>Review proposals</button>
+    </section>`;
+  }
+
+  async decideProposal(action, decision) {
+    if (this.state.actionSaving) return;
+    this.setState({ actionSaving: true, actionError: '', actionNotice: '', actionHistory: null });
+    try {
+      const r = await fetch(`/actions/${action.id}/decision`, {
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ decision, revision: String(action.revision) }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error ?? 'Your decision could not be saved. Please try again.');
+      }
+      this.setState({ actionNotice: decision === 'approved'
+        ? `Approval recorded for “${action.title}” (revision ${action.revision}). Nothing was executed or queued; manual steps are yours to carry out.`
+        : `Rejection recorded for “${action.title}” (revision ${action.revision}). No external action was taken.` });
+    } catch (err) { this.setState({ actionError: err.message }); }
+    finally { await this.load(); this.setState({ actionSaving: false }); }
+  }
+
+  async showActionHistory(id) {
+    this.setState({ actionHistory: null, actionError: '' });
+    try {
+      const r = await fetch(`/api/actions/${id}`);
+      if (!r.ok) throw new Error('Decision history could not load. Please try again.');
+      const d = await r.json();
+      this.setState({ actionHistory: { id, revision: d.action.revision, events: d.events } });
+    } catch (err) { this.setState({ actionError: err.message }); }
+  }
+
+  renderActions() {
+    const { data, actionSel, actionSaving, actionError, actionNotice, actionHistory } = this.state;
+    const filter = this.state.actionFilter ?? 'pending';
+    const actions = data.actions;
+    const shown = actions.items.filter((a) => filter === 'all' || a.status === filter);
+    const a = shown.find((x) => x.id === actionSel) ?? shown[0];
+    const labels = { pending: 'Needs review', approved: 'Approval recorded', rejected: 'Rejected', expired: 'Expired' };
+    const when = (iso) => iso ? new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Brisbane', dateStyle: 'medium', timeStyle: 'short',
+    }).format(new Date(iso)) : 'Not specified';
+    const payload = a?.proposed_action;
+    const source = a?.source_snapshot ?? {};
+    const history = a && actionHistory?.id === a.id && actionHistory.revision === a.revision ? actionHistory.events : null;
+    return html`<section id="actions" class="col" style="gap: 12px;">
+      <div class="between wrap" style="gap: 12px;"><h2 style="font-size: 20px;">Action review</h2>
+        <span class="fs13 muted">${data.actionsError ? 'Unavailable' : `${actions.pending} awaiting review`} · Decisions only</span></div>
+      <p class="fs12 muted">Approvals are saved decisions. No calendar event, message, booking or payment is executed or queued by this screen.</p>
+      ${data.actionsError && html`<p class="fs13 coral" role="alert">Proposals could not load. Retrying automatically.</p>`}
+      ${actionError && html`<p class="fs13 coral" role="alert">${actionError}</p>`}
+      ${actionNotice && html`<p class="fs13 steel" role="status">${actionNotice}</p>`}
+      <div class="filters" role="group" aria-label="Filter proposals">
+        ${['pending', 'approved', 'rejected', 'expired', 'all'].map((id) => html`<button class="btn btn-ghost sm"
+          aria-pressed=${filter === id} style=${filter === id ? on('var(--wash-8)') : ''}
+          onClick=${() => this.setState({ actionFilter: id, actionHistory: null, actionError: '' })}>${id === 'all' ? 'All' : id === 'approved' ? 'Approved' : labels[id]}</button>`)}
+      </div>
+      ${actions.total > actions.items.length && html`<p class="fs12 muted">Showing ${actions.items.length} of ${actions.total} proposals, with pending proposals first.</p>`}
+      ${!shown.length ? html`<div class="tile panel"><p class="fs14 soft">${data.actionsError ? 'Proposal state is unknown.' : 'No proposals in this view.'}</p></div>` : html`
+        <div class="inbox">
+          <div class="mail-list" aria-label="Action proposals">
+            ${shown.map((x) => html`<button class=${`mail finding-row${x.id === a.id ? ' sel' : ''}`} key=${x.id}
+              aria-pressed=${x.id === a.id} onClick=${() => this.setState({ actionSel: x.id, actionHistory: null, actionError: '' })}>
+              <span class="dot" style=${`background: ${x.status === 'pending' ? 'var(--accent-2)' : 'transparent'};`}></span>
+              <span class="col" style="gap: 4px; min-width: 0;"><span class="fs12 muted">${x.kind === 'manual' ? 'Manual step' : 'Calendar proposal'} · ${labels[x.status]}</span>
+                <span class="fs14 text ellipsis">${x.title}</span><span class="fs13 muted ellipsis">${x.detail}</span></span>
+            </button>`)}
+          </div>
+          <article class="reader" aria-label="Proposal details">
+            <span class="fs12 steel">${labels[a.status]} · Revision ${a.revision}</span>
+            <h3>${a.title}</h3><p class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${a.detail}</p>
+            ${a.kind === 'manual' ? html`<div class="col"><span class="fs12 muted">For you to do yourself</span>
+              <p class="fs14 text" style="white-space: pre-wrap; overflow-wrap: anywhere;">${payload?.instructions || 'No structured instructions recorded.'}</p></div>` : html`
+              <div class="col fs13 soft" style="overflow-wrap: anywhere;">
+                <span>Event: ${payload?.calendar?.title || 'Not specified'}</span>
+                <span>Start: ${when(payload?.calendar?.start)}</span><span>End: ${when(payload?.calendar?.end)}</span>
+                <span>Timezone: ${payload?.calendar?.timeZone || 'Australia/Brisbane'}</span>
+                <span>Target calendar: ${payload?.target_calendar || 'Not selected'}</span>
+                ${payload?.calendar?.location && html`<span>Location: ${payload.calendar.location}</span>`}
+              </div>`}
+            <div class="col fs12 muted" style="overflow-wrap: anywhere;"><span>Source: ${source.subject || 'Legacy suggestion; source not recorded'}</span>
+              ${source.sender && html`<span>Sender as shown: ${source.sender}</span>`}</div>
+            ${source.evidence && html`<blockquote class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${source.evidence}</blockquote>`}
+            ${source.deadline_text && html`<p class="fs13 dim">Date/time as stated: ${source.deadline_text}</p>`}
+            ${source.thread_id && html`<a class="fs13 steel" href=${`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(source.thread_id)}`} target="_blank" rel="noopener noreferrer">Open proposal source in Gmail ↗</a>`}
+            ${a.blocked_reasons.length > 0 && html`<div class="col"><span class="fs12 muted">Needs clarification before approval</span>
+              <ul class="fs13 soft">${a.blocked_reasons.map((reason) => html`<li>${reason}</li>`)}</ul></div>`}
+            <span class="fs12 muted">Expires: ${when(a.expires_at)}</span>
+            ${a.decided_at && html`<span class="fs12 muted">Decision recorded: ${when(a.decided_at)}</span>`}
+            ${a.status === 'pending' && html`<div class="row wrap">
+              <button class="btn btn-primary" disabled=${actionSaving || !a.can_approve} onClick=${() => this.decideProposal(a, 'approved')}>Approve proposal</button>
+              <button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.decideProposal(a, 'rejected')}>Reject proposal</button>
+            </div>`}
+            <span class="fs12 muted">${a.status === 'approved' ? 'Your choice is recorded. This action has not been executed and is not queued for future execution.' : 'Nothing has been executed. Calendar execution is a later feature.'}</span>
+            <button class="btn btn-ghost sm" onClick=${() => this.showActionHistory(a.id)}>Decision history</button>
+            ${history && html`<ul class="fs12 dim">${history.length ? history.map((event) => html`<li>Revision ${event.revision}: ${event.event_type} · ${event.actor} · ${when(event.created_at)}</li>`) : html`<li>No recorded events for this legacy suggestion.</li>`}</ul>`}
+          </article>
+        </div>`}
     </section>`;
   }
 

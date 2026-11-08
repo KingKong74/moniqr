@@ -3,7 +3,7 @@ import { request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { AccessDenied } from '../src/access.js';
-import type { AgentsClient, RunKind } from '../src/agents.js';
+import { AgentApiError, type AgentsClient, type RunKind } from '../src/agents.js';
 import { createApp } from '../src/app.js';
 import { formatWhen } from '../src/page.js';
 
@@ -11,8 +11,19 @@ const ORIGIN = 'https://moniqr.com';
 const queued: RunKind[] = [];
 let failAgents = false;
 const decisions: unknown[] = [];
+const actionDecisions: unknown[] = [];
+let staleAction = false;
 
 const agents: AgentsClient = {
+  actions: async () => {
+    if (failAgents) throw new Error('down');
+    return { items: [], total: 0, pending: 0 };
+  },
+  actionDetail: async () => { throw new AgentApiError(404, 'Action not found.'); },
+  decideAction: async (id, decision, revision) => {
+    if (staleAction) throw new AgentApiError(409, 'This proposal changed. Reload and review the latest details.');
+    actionDecisions.push({ id, decision, revision });
+  },
   findings: async () => {
     if (failAgents) throw new Error('down');
     return { items: [], scan: null, total: 0 };
@@ -108,6 +119,8 @@ test('HQ data carries the brief as escaped HTML, the runs and the placeholder co
   assert.equal(data.calendar.status, 'connected');
   assert.deepEqual(data.findings, { items: [], scan: null, total: 0 });
   assert.equal(data.findingsError, false);
+  assert.deepEqual(data.actions, { items: [], total: 0, pending: 0 });
+  assert.equal(data.actionsError, false);
   assert.equal(data.calendar.events[0].title, 'Meeting');
   assert.equal(data.email, 'bailey@example.com');
   assert.equal(data.agentsError, false);
@@ -129,6 +142,7 @@ test('HQ data still loads when the agent API is down', async () => {
     assert.equal(data.brief, null);
     assert.equal(data.calendar.status, 'error');
     assert.equal(data.findingsError, true);
+    assert.equal(data.actionsError, true);
     assert.deepEqual(data.calendar.events, []);
     assert.deepEqual(data.runs, []);
   } finally {
@@ -167,6 +181,29 @@ test('run now refuses cross-site posts and unknown kinds', async () => {
 test('dates read in Brisbane time', () => {
   assert.equal(formatWhen('2026-10-26T20:30:00Z'), 'Tue 27 Oct, 6:30am');
   assert.equal(formatWhen('2026-10-27T03:05:00Z'), 'Tue 27 Oct, 1:05pm');
+});
+
+test('action decisions authenticate, enforce same origin, validate revision and expose stale-review conflicts', async () => {
+  const decide = (body: string, headers: Record<string, string>) => fetch(`${base}/actions/1/decision`, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body,
+  });
+  const body = 'decision=approved&revision=1';
+  assert.equal((await decide(body, { origin: ORIGIN })).status, 403);
+  assert.equal((await decide(body, authed)).status, 403);
+  assert.equal((await decide(body, { ...authed, origin: 'https://evil.example' })).status, 403);
+  assert.equal((await decide('decision=approved', { ...authed, origin: ORIGIN })).status, 400);
+  assert.equal((await decide('decision=executed&revision=1', { ...authed, origin: ORIGIN })).status, 400);
+  assert.equal((await decide(body, { ...authed, origin: ORIGIN })).status, 204);
+  assert.deepEqual(actionDecisions.splice(0), [{ id: 1, decision: 'approved', revision: 1 }]);
+  staleAction = true;
+  try {
+    const r = await decide(body, { ...authed, origin: ORIGIN });
+    assert.equal(r.status, 409);
+    assert.match((await r.json()).error, /proposal changed/);
+  } finally { staleAction = false; }
+  assert.equal((await get('/api/actions/1')).status, 403);
+  assert.equal((await get('/api/actions/bad', authed)).status, 400);
+  assert.equal((await get('/api/actions/1', authed)).status, 404);
 });
 
 test('finding decisions require sign-in, same origin and a supported status', async () => {

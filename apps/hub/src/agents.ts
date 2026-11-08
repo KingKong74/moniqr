@@ -66,7 +66,38 @@ export interface FindingsData {
   };
 }
 
+export interface ActionProposal {
+  id: number;
+  finding_id: number | null;
+  kind: 'manual' | 'calendar_create';
+  title: string;
+  detail: string;
+  revision: number;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  expires_at: string | null;
+  decided_at: string | null;
+  execution_status: string;
+  execution_mode: 'record_only' | 'enabled';
+  proposed_action: {
+    instructions: string;
+    calendar: null | { title: string; start: string | null; end: string | null; timeZone: string; location: string };
+    target_calendar: string | null;
+    missing_details: string[];
+  } | null;
+  source_snapshot: { subject?: string; sender?: string; evidence?: string; deadline_text?: string; thread_id?: string; missing_details?: string[] };
+  blocked_reasons: string[];
+  can_approve: boolean;
+}
+export interface ActionsData { items: ActionProposal[]; total: number; pending: number; }
+
+export class AgentApiError extends Error {
+  constructor(public status: number, message: string) { super(message); }
+}
+
 export interface AgentsClient {
+  actions(): Promise<ActionsData>;
+  actionDetail(id: number): Promise<{ action: ActionProposal; events: { id: number; revision: number; event_type: string; actor: string; created_at: string }[] }>;
+  decideAction(id: number, decision: 'approved' | 'rejected', revision: number): Promise<void>;
   findings(): Promise<FindingsData>;
   setFindingStatus(id: number, status: EmailFinding['status']): Promise<void>;
   calendar(): Promise<CalendarData>;
@@ -86,11 +117,17 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(path === '/calendar' ? 30_000 : 5000),
     });
-    if (!res.ok) throw new Error(`Agent API ${method} ${path} returned ${res.status}`);
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({})) as { error?: string };
+      throw new AgentApiError(res.status, error.error ?? `Agent API ${method} ${path} returned ${res.status}`);
+    }
     return (await res.json()) as T;
   };
 
   return {
+    actions: () => call<ActionsData>('GET', '/actions'),
+    actionDetail: (id) => call('GET', `/actions/${id}`),
+    decideAction: async (id, decision, revision) => { await call('POST', `/actions/${id}/decision`, { decision, revision }); },
     findings: () => call<FindingsData>('GET', '/findings'),
     setFindingStatus: async (id, status) => { await call('PATCH', `/findings/${id}`, { status }); },
     calendar: () => call<CalendarData>('GET', '/calendar'),

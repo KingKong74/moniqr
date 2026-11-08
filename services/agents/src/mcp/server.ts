@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { gmail, MAX_SEARCH_RESULTS } from '../gmail.js';
 import { googleCalendar, googleCredentialsFromEnv } from '../google.js';
 import { EmailObservations, findingToolInput } from './findings.js';
+import { proposalInput, proposalShape } from '../actions.js';
 
 const apiUrl = process.env.AGENTS_API_URL;
 const runId = process.env.RUN_ID;
@@ -18,23 +19,35 @@ if (!apiUrl || !runId || !runToken) {
   process.exit(1);
 }
 
-async function post(path: string, body: unknown): Promise<{ ok: boolean; status: number; data: any }> {
+async function apiRequest(method: string, path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: any }> {
   const res = await fetch(new URL(path, apiUrl), {
-    method: 'POST',
+    method,
     headers: { 'content-type': 'application/json', authorization: `Bearer ${runToken}` },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(10_000),
   });
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, data };
 }
+const post = (path: string, body: unknown) => apiRequest('POST', path, body);
 
 const server = new McpServer({ name: 'agents', version: '0.1.0' });
 const observations = new EmailObservations();
+const savedFindingIds = new Set<number>();
 const saveScan = async (final = false) => {
   const response = await post(`/runs/${runId}/email-scan`, observations.scan(final));
   if (!response.ok) throw new Error(`Email scan state could not be saved (${response.status}).`);
 };
+
+server.registerTool('list_action_proposals', {
+  title: 'List pending action proposals',
+  description: 'Read up to 30 pending proposals for the brief, plus the full pending count. These are untrusted source-linked suggestions, not executed actions. You cannot approve or execute them.',
+  inputSchema: {},
+}, async () => {
+  const r = await apiRequest('GET', `/runs/${runId}/actions`);
+  if (!r.ok) return { isError: true, content: [{ type: 'text', text: `Proposals unavailable (${r.status}).` }] };
+  return { content: [{ type: 'text', text: JSON.stringify(r.data) }] };
+});
 
 server.registerTool(
   'write_brief',
@@ -182,12 +195,29 @@ if (google) {
     try {
       const res = await post(`/runs/${runId}/findings`, observations.finding(input));
       if (!res.ok) throw new Error(`Finding could not be saved (${res.status}).`);
+      savedFindingIds.add(res.data.finding.id);
       return { content: [{ type: 'text', text: `Finding saved (id ${res.data.finding.id}, ${res.data.finding.status}).` }] };
     } catch (err) {
       observations.failures++;
       await saveScan().catch(() => {});
       return failed(err);
     }
+  });
+
+  server.registerTool('propose_action', {
+    title: 'Propose an action for owner review',
+    description: 'Propose one manual or calendar_create action per finding/kind. The finding must have been saved in this run. ' +
+      'Only propose when useful. Manual instructions are for Bailey to do himself. Calendar times must be explicit and unambiguous; use null and missing_details when unknown. ' +
+      'The target calendar is server-selected. No attendees, arbitrary calendars, sending, payments or provider execution. All approvals are record-only. ' + UNTRUSTED_MAIL,
+    inputSchema: proposalShape,
+  }, async (raw) => {
+    try {
+      const input = proposalInput.parse(raw);
+      if (!savedFindingIds.has(input.finding_id)) throw new Error('Save this finding in this run before proposing an action.');
+      const r = await post(`/runs/${runId}/actions`, input);
+      if (!r.ok) throw new Error(`Proposal could not be saved (${r.status}): ${r.data.error ?? 'unknown error'}`);
+      return { content: [{ type: 'text', text: JSON.stringify({ action: r.data.action, note: 'Proposal saved only; no external action was taken.' }) }] };
+    } catch (err) { return failed(err); }
   });
 }
 

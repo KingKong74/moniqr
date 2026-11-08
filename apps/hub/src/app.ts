@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { AccessDenied, type Identify } from './access.js';
-import { RUN_KINDS, type AgentsClient, type RunKind } from './agents.js';
+import { AgentApiError, RUN_KINDS, type AgentsClient, type RunKind } from './agents.js';
 import { hqData, renderPage } from './page.js';
 
 // The page's own script and styles. They sit beside src/ and dist/, so this works for both.
@@ -72,8 +72,8 @@ export function createApp(opts: HubOptions) {
   });
 
   app.get('/api/hq', async (_req, res) => {
-    const [brief, runs, calendar, findings] = await Promise.allSettled([
-      opts.agents.latestBrief(), opts.agents.recentRuns(5), opts.agents.calendar(), opts.agents.findings(),
+    const [brief, runs, calendar, findings, actions] = await Promise.allSettled([
+      opts.agents.latestBrief(), opts.agents.recentRuns(5), opts.agents.calendar(), opts.agents.findings(), opts.agents.actions(),
     ]);
     const agentsError = brief.status === 'rejected' || runs.status === 'rejected';
     if (agentsError) console.error('[hub] agent API unreachable', brief.status === 'rejected' ? brief.reason : runs);
@@ -86,8 +86,35 @@ export function createApp(opts: HubOptions) {
         calendar: calendar.status === 'fulfilled' ? calendar.value : { status: 'error', events: [] },
         findings: findings.status === 'fulfilled' ? findings.value : undefined,
         findingsError: findings.status === 'rejected',
+        actions: actions.status === 'fulfilled' ? actions.value : undefined,
+        actionsError: actions.status === 'rejected',
       }),
     );
+  });
+
+  app.get('/api/actions/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return void res.status(400).json({ error: 'Invalid action.' });
+    try { res.json(await opts.agents.actionDetail(id)); }
+    catch (err) {
+      if (err instanceof AgentApiError && err.status === 404) return void res.status(404).json({ error: err.message });
+      throw err;
+    }
+  });
+
+  app.post('/actions/:id/decision', express.urlencoded({ extended: false, limit: '1kb' }), async (req, res) => {
+    if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });
+    const id = Number(req.params.id);
+    const revision = Number(req.body?.revision);
+    const decision = req.body?.decision;
+    if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(revision) || revision <= 0 || !['approved', 'rejected'].includes(decision)) {
+      return void res.status(400).json({ error: 'Invalid action decision.' });
+    }
+    try { await opts.agents.decideAction(id, decision, revision); res.status(204).end(); }
+    catch (err) {
+      if (err instanceof AgentApiError && [400, 404, 409].includes(err.status)) return void res.status(err.status).json({ error: err.message });
+      throw err;
+    }
   });
 
   app.post('/findings/:id/status', express.urlencoded({ extended: false, limit: '1kb' }), async (req, res) => {

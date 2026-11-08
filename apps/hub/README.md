@@ -10,11 +10,13 @@ The latest brief, recent runs, *Run EA now*, project links, admin inbox findings
 
 The Admin inbox replaces sample messages and approval controls with source-linked email findings. **Scan email** starts an EA morning-brief run. Review/dismiss/new decisions persist through the agent API and survive reloads and re-scans. The inbox shows the latest scan's completion state and the last successful scan separately, and retains findings when a scan fails. Lists are capped at 200 with new findings first; the UI reports when more exist.
 
-Lifestyle cards, the carousel and chat still come from `src/mock.ts`, and the page labels sample content. Priorities, mood, habits and chat only change page state and reset on reload. Nothing on the page books, buys or sends anything. Findings are notes for review, not executable approvals.
+Action review shows real persisted proposals, source evidence, missing details, expiry and decision history. Approve/reject decisions survive reloads; they record a choice without executing or queueing an external action. The request includes the displayed revision, so a changed proposal requires another review. Calendar proposals show Brisbane times and the owner-configured destination; missing details block approval. Findings and action decisions remain separate.
+
+Lifestyle cards, the carousel and chat still come from `src/mock.ts`, and the page labels sample content. Priorities, mood, habits and chat only change page state and reset on reload. Nothing on the page books, buys or sends anything.
 
 ## Login
 
-Cloudflare Access sits in front of moniqr.com and its subdomains and only lets in the emails in its policy. Traefik can also be reached directly, so the hub checks the `Cf-Access-Jwt-Assertion` token on every request too: signature, team, AUD tag and an email in `HUB_ALLOWED_EMAILS`. `/health` is the only open route. Run requests and finding decisions accept only posts whose `Origin` is the hub itself. Scripts load only from the hub; the one third party is Google Fonts for Barlow.
+Cloudflare Access sits in front of moniqr.com and its subdomains and only lets in the emails in its policy. Traefik can also be reached directly, so the hub checks the `Cf-Access-Jwt-Assertion` token on every request too: signature, team, AUD tag and an email in `HUB_ALLOWED_EMAILS`. `/health` is the only open route. Run requests, finding decisions and action decisions accept only posts whose `Origin` is the hub itself. Scripts load only from the hub; the one third party is Google Fonts for Barlow.
 
 ## Local development
 

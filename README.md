@@ -71,7 +71,17 @@ Morning briefs and weekly look-aheads can save email findings: bills/deadlines, 
 
 Findings live in Postgres, deduplicated by message and category. Re-scanning updates their content while preserving your reviewed/dismissed state. The hub's **Admin inbox** shows the source, evidence and scan status, and **Scan email** queues a morning-brief run. A scan's coverage is bounded by the existing Gmail searches and result limits; it is not a complete mailbox audit. Partial and failed scans retain existing findings, and a run that never searched email does not count as a successful scan.
 
-This is the first daily-admin slice: findings are notes, not executable approvals. Reviewing or dismissing one changes Moniqr only. Calendar creation, payments, sending email and attachment downloads are not implemented here. The new migration runs on API startup, as existing migrations do.
+Reviewing or dismissing a finding changes Moniqr only. Calendar creation, payments, sending email and attachment downloads are not implemented here. New migrations run on API startup, as existing migrations do.
+
+## Action review
+
+The EA can propose a manual step or a timed calendar event from a finding it saved in the current run. **Action review** on the hub shows the reason, source evidence, proposed details, missing information, expiry and decision history. Pending proposals are available to brief runs through the read-only `list_action_proposals` tool, including when Google is disconnected.
+
+An approval records your decision only. It neither executes nor queues anything. Approved manual steps are yours to carry out. Every current proposal has `execution_mode=record_only` and `execution_status=not_requested`; a future executor must refuse these rows. Enabling execution will require a fresh reviewed proposal and decision rather than silently consuming older approvals.
+
+Proposals deduplicate by finding and kind. A repeated proposal does not extend expiry. Changing the reviewed content increments its revision and invalidates an earlier approval; decisions include that revision so a stale page cannot approve newer content. Rejected and expired proposals never reopen on a scan. Decisions and revisions have durable audit snapshots. Proposals expire after seven days or at the calendar start, whichever is earlier.
+
+Calendar proposals accept only Brisbane times, no attendees, and no model-selected calendar. Optional `GOOGLE_WRITE_CALENDAR_ID` in the API environment selects the destination shown for review; missing destination, unresolved details or a dismissed source block approval. This setting does not grant Google write permissions or enable execution. Gmail and Calendar scopes stay read-only.
 
 ## Deploying on Dokploy
 
