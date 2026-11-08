@@ -57,7 +57,7 @@ curl -X PATCH .../schedules/1 -H "Authorization: Bearer $API_TOKEN" -H 'content-
 
 ## Google Calendar and Gmail
 
-The EA reads calendars and email with one refresh token limited to `calendar.readonly` and `gmail.readonly`. The token stays in the runner's environment and is passed only to the agent MCP server, never to the Codex model process itself.
+The EA reads calendars and email with one refresh token limited to `calendar.readonly` and `gmail.readonly`. The dashboard shows the current week in Brisbane time, with read-only events refreshed once per minute. The token is configured in the API and runner environments and is passed to the agent MCP server, never to the Codex model process itself.
 
 1. In Google Cloud, create a project, enable the Google Calendar and Gmail APIs, set up the OAuth consent screen and **publish it to production** (in Testing, refresh tokens expire after 7 days). Then create an OAuth client of type *Desktop app*.
 2. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `~/.config/moniqr/ops.env`, then run `npm run google-auth -w services/agents` and follow the link. It saves `GOOGLE_REFRESH_TOKEN` to the same file without printing it.

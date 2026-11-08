@@ -30,6 +30,9 @@ services:
       DATABASE_URL: postgres://agents:${POSTGRES_PASSWORD}@postgres:5432/agents
       API_TOKEN: ${API_TOKEN:?set API_TOKEN}
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN:-}
       PORT: 8080
     expose:
       - "8080"

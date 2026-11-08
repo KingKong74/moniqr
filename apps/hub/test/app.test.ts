@@ -12,6 +12,10 @@ const queued: RunKind[] = [];
 let failAgents = false;
 
 const agents: AgentsClient = {
+  calendar: async () => {
+    if (failAgents) throw new Error('down');
+    return { status: 'connected', events: [{ calendar: 'Personal', title: 'Meeting', start: '2026-11-09T09:00:00+10:00', end: '2026-11-09T10:00:00+10:00', allDay: false }] };
+  },
   latestBrief: async () => {
     if (failAgents) throw new Error('down');
     return { id: 1, kind: 'test', body_md: '## Hello\n\n- <b>first</b>', summary: 'Hi', created_at: '2026-10-26T20:30:00Z' };
@@ -94,6 +98,8 @@ test('HQ data carries the brief as escaped HTML, the runs and the placeholder co
   const res = await get('/api/hq', authed);
   assert.equal(res.status, 200);
   const data = await res.json();
+  assert.equal(data.calendar.status, 'connected');
+  assert.equal(data.calendar.events[0].title, 'Meeting');
   assert.equal(data.email, 'bailey@example.com');
   assert.equal(data.agentsError, false);
   assert.ok(data.brief.html.includes('<h3>Hello</h3>'));
@@ -112,6 +118,8 @@ test('HQ data still loads when the agent API is down', async () => {
     const data = await res.json();
     assert.equal(data.agentsError, true);
     assert.equal(data.brief, null);
+    assert.equal(data.calendar.status, 'error');
+    assert.deepEqual(data.calendar.events, []);
     assert.deepEqual(data.runs, []);
   } finally {
     failAgents = false;

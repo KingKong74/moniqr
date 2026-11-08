@@ -23,7 +23,23 @@ export interface RunSummary {
   error: string | null;
 }
 
+export interface CalendarEvent {
+  calendar: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  location?: string;
+  response?: string;
+}
+
+export interface CalendarData {
+  status: 'connected' | 'disconnected' | 'error';
+  events: CalendarEvent[];
+}
+
 export interface AgentsClient {
+  calendar(): Promise<CalendarData>;
   latestBrief(): Promise<Brief | null>;
   recentRuns(limit: number): Promise<RunSummary[]>;
   queueRun(kind: RunKind): Promise<void>;
@@ -38,13 +54,14 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(path === '/calendar' ? 30_000 : 5000),
     });
     if (!res.ok) throw new Error(`Agent API ${method} ${path} returned ${res.status}`);
     return (await res.json()) as T;
   };
 
   return {
+    calendar: () => call<CalendarData>('GET', '/calendar'),
     latestBrief: async () => (await call<{ brief: Brief | null }>('GET', '/briefs/latest')).brief,
     recentRuns: async (limit) => (await call<{ runs: RunSummary[] }>('GET', `/runs?limit=${limit}`)).runs,
     queueRun: async (kind) => {

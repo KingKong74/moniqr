@@ -18,9 +18,9 @@ const hhmm = (h) => {
   return `${pad(hh)}:${pad(Math.round((h - hh) * 60))}`;
 };
 
-// Calendar geometry: 6am to 11pm at 26px an hour.
-const H0 = 6;
-const H1 = 23;
+// Calendar geometry: the full day at 26px an hour.
+const H0 = 0;
+const H1 = 24;
 const PX = 26;
 const SLIDE_SECONDS = 8;
 const POLL_MS = 5000;
@@ -123,10 +123,11 @@ class App extends Component {
       this.setState(first ? { data, ...this.seed(data.mock) } : { data, loadError: false }, () => {
         if (first) this.startBar();
       });
-      if (data.busy) this.poll = setTimeout(() => this.load(), POLL_MS);
+      this.poll = setTimeout(() => this.load(), data.busy ? POLL_MS : 60_000);
     } catch (err) {
       console.error(err);
       this.setState({ loadError: true });
+      this.poll = setTimeout(() => this.load(), 60_000);
     }
   }
 
@@ -294,11 +295,39 @@ class App extends Component {
   /** Values several sections share. */
   derive() {
     const { data, ap, read, sel } = this.state;
-    const { mock } = data;
+    const mock = { ...data.mock, events: [], allDay: [], upNext: { title: 'No upcoming events', note: 'Google Calendar' } };
     const now = brisbane(this.state.now);
     const todayIdx = dowOf(now);
     const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - todayIdx * DAY_MS);
     const week = DOW.map((_, i) => new Date(monday.getTime() + i * DAY_MS));
+    const weekStart = monday.getTime() - 10 * 3_600_000;
+    const calendar = data.calendar ?? { status: 'disconnected', events: [] };
+    for (const event of calendar.events) {
+      if (event.response === 'declined') continue;
+      const start = event.allDay ? Date.parse(event.start + 'T00:00:00+10:00') : Date.parse(event.start);
+      const end = event.allDay ? Date.parse(event.end + 'T00:00:00+10:00') : Date.parse(event.end);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+      for (let day = 0; day < 7; day++) {
+        const dayStart = weekStart + day * DAY_MS;
+        if (start >= dayStart + DAY_MS || end <= dayStart) continue;
+        if (event.allDay) mock.allDay.push({ day, title: event.title });
+        else mock.events.push({
+          day, start: (Math.max(start, dayStart) - dayStart) / 3_600_000,
+          hours: (Math.min(end, dayStart + DAY_MS) - Math.max(start, dayStart)) / 3_600_000,
+          title: event.title, kind: event.response === 'tentative' ? 'pend' : 'life',
+          note: [event.calendar, event.location].filter(Boolean).join(' · '),
+        });
+      }
+    }
+    const next = calendar.events.filter((e) => e.response !== 'declined' && !e.allDay && Date.parse(e.end) > this.state.now)
+      .sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0];
+    if (next) mock.upNext = { title: next.title, note: new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Brisbane', weekday: 'short', hour: 'numeric', minute: '2-digit',
+    }).format(new Date(next.start)) + (next.location ? ' · ' + next.location : '') };
+    else if (calendar.status !== 'connected') mock.upNext = {
+      title: calendar.status === 'error' ? 'Calendar unavailable' : 'Calendar not connected',
+      note: calendar.status === 'error' ? 'Trying again automatically' : 'Connect Google Calendar',
+    };
     const stateOf = (m) => (m.approveLabel ? ap[m.id] : m.failed ? 'failed' : 'fyi');
     const pending = Object.values(ap).filter((x) => x === 'pending').length;
     const unread = mock.mail.filter((m) => !read[m.id] && m.id !== sel).length;
@@ -404,7 +433,7 @@ class App extends Component {
       <main class="main">
         <section class="col" style="gap: 10px;" aria-label="Live Executive Assistant">
           <h2>Executive Assistant</h2>
-          <p class="fs14 muted">Generate a real brief from your connected email and calendars. The other dashboard cards contain sample data.</p>
+          <p class="fs14 muted">Generate a brief from your connected email and calendars. Calendar events are live; other dashboard cards contain sample data.</p>
           ${this.state.data.agentsError && html`<p class="fs14 coral">The agent service isn't reachable right now.</p>`}
           <div class="row wrap">
             <button class="btn btn-primary" disabled=${this.state.posting || this.state.data.busy || this.state.data.agentsError} onClick=${() => { this.openView('briefing'); this.runEa('morning_brief'); }}>${this.state.posting || this.state.data.busy ? 'EA is running…' : 'Run EA now'}</button>
@@ -1013,6 +1042,7 @@ class App extends Component {
     const nowTop = `${(Math.min(Math.max(v.hour, H0), H1) - H0) * PX}px`;
     const swatch = (c) => `background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border === 'transparent' ? c.bg : c.border};`;
     const picked = this.state.pick;
+    const calendarStatus = this.state.data.calendar?.status ?? 'disconnected';
     return html`
       <section class="col" style="gap: 12px;">
         <div class="row wrap" style="gap: 10px;">
@@ -1023,6 +1053,10 @@ class App extends Component {
             ${Object.values(EV_STYLE).map((c) => html`<span class="row nowrap" style="gap: 6px;"><span class="swatch" style=${swatch(c)}></span>${c.label}</span>`)}
           </div>
         </div>
+        <p class="fs12 muted">${calendarStatus === 'connected'
+          ? (events.length || v.mock.allDay.length ? 'Google Calendar · Read-only · Brisbane time' : 'No events this week · Google Calendar · Brisbane time')
+          : calendarStatus === 'error' ? 'Google Calendar could not load. Retrying automatically.'
+          : 'Google Calendar is not connected. Configure the Google connection to show your events.'}</p>
         <div class="cal-scroll">
           <div class="cal">
             <div class="cal-row">

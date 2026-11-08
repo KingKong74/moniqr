@@ -1,4 +1,4 @@
-import type { Brief, RunSummary } from './agents.js';
+import type { Brief, RunSummary, CalendarData } from './agents.js';
 import { LINKS } from './links.js';
 import { escapeHtml as esc, renderMarkdown } from './markdown.js';
 import { MOCK } from './mock.js';
@@ -32,6 +32,7 @@ export interface HqInput {
   runs: RunSummary[];
   /** Set when the agent API couldn't be reached. */
   agentsError: boolean;
+  calendar?: CalendarData;
 }
 
 /**
@@ -42,6 +43,7 @@ export interface HqInput {
 export function hqData(d: HqInput) {
   return {
     email: d.email,
+    calendar: d.calendar ?? { status: 'disconnected', events: [] },
     agentsError: d.agentsError,
     brief: d.brief && {
       kind: kindLabel(d.brief.kind),

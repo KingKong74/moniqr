@@ -32,6 +32,7 @@ export interface AppOptions {
   runnerToken: string;
   /** Runs left "running" longer than this are failed on the next claim. */
   staleRunMs: number;
+  calendar?: { listEvents(start: Date, end: Date): Promise<unknown[]> } | null;
 }
 
 const idParam = z.coerce.number().int().positive();
@@ -65,6 +66,35 @@ export function createApp(opts: AppOptions) {
     const body = z.object({ kind: z.enum(RUN_KINDS).default('morning_brief') }).parse(req.body ?? {});
     const run = await queueRun(pool, { agentSlug: String(req.params.slug), trigger: 'manual', kind: body.kind });
     res.status(202).json({ run });
+  });
+
+  // Cache the current Brisbane week: HQ polls every five seconds.
+  let calendarCache: { week: string; expires: number; events: unknown[] } | undefined;
+  let calendarPending: Promise<unknown[]> | undefined;
+  app.get('/calendar', hub, async (_req, res) => {
+    if (!opts.calendar) {
+      res.json({ status: 'disconnected', events: [] });
+      return;
+    }
+    const local = new Date(Date.now() + 10 * 3_600_000);
+    const start = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate())
+      - ((local.getUTCDay() + 6) % 7) * 86_400_000 - 10 * 3_600_000);
+    const week = start.toISOString();
+    try {
+      if (!calendarCache || calendarCache.week !== week || calendarCache.expires < Date.now()) {
+        calendarPending ??= opts.calendar.listEvents(start, new Date(start.getTime() + 7 * 86_400_000));
+        try {
+          const events = await calendarPending;
+          calendarCache = { week, events, expires: Date.now() + 60_000 };
+        } finally {
+          calendarPending = undefined;
+        }
+      }
+      res.json({ status: 'connected', events: calendarCache.events });
+    } catch (err) {
+      console.error('[calendar]', err);
+      res.status(502).json({ error: 'Calendar unavailable' });
+    }
   });
 
   app.get('/runs', hub, async (req, res) => {

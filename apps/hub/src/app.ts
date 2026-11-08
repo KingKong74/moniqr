@@ -72,7 +72,7 @@ export function createApp(opts: HubOptions) {
   });
 
   app.get('/api/hq', async (_req, res) => {
-    const [brief, runs] = await Promise.allSettled([opts.agents.latestBrief(), opts.agents.recentRuns(5)]);
+    const [brief, runs, calendar] = await Promise.allSettled([opts.agents.latestBrief(), opts.agents.recentRuns(5), opts.agents.calendar()]);
     const agentsError = brief.status === 'rejected' || runs.status === 'rejected';
     if (agentsError) console.error('[hub] agent API unreachable', brief.status === 'rejected' ? brief.reason : runs);
     res.json(
@@ -81,6 +81,7 @@ export function createApp(opts: HubOptions) {
         brief: brief.status === 'fulfilled' ? brief.value : null,
         runs: runs.status === 'fulfilled' ? runs.value : [],
         agentsError,
+        calendar: calendar.status === 'fulfilled' ? calendar.value : { status: 'error', events: [] },
       }),
     );
   });
