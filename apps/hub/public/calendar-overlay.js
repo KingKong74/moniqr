@@ -28,14 +28,18 @@ export function calendarLayers(events, actions, showRequests = true, now = Date.
   return { events: base, requests };
 }
 
-/** Pack overlapping events into lanes within their confirmed/request half. */
+/** Requests span the day as a translucent overlay. Only confirmed events share lanes. */
 export function calendarDayLayout(events) {
-  const result = new Map(), hasRequests = events.some(e => e.overlay);
+  const result = new Map();
   for (const overlay of [false, true]) {
+    if (overlay) {
+      for (const event of events.filter(e => e.overlay)) result.set(event, { left: 1, width: 98 });
+      continue;
+    }
     const sorted = events.filter(e => !!e.overlay === overlay).sort((a,b) => a.start-b.start || b.hours-a.hours);
     let cluster = [], ends = [], clusterEnd = -Infinity;
     const flush = () => {
-      const span = hasRequests ? 47 : 98, offset = overlay ? 52 : 1;
+      const span = 98, offset = 1;
       for (const { event, lane } of cluster) result.set(event, { left: offset + lane * span / ends.length, width: Math.max(0.5, span / ends.length - 0.8) });
       cluster = []; ends = []; clusterEnd = -Infinity;
     };

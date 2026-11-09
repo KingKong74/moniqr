@@ -23,10 +23,10 @@ test('confirmed events reconcile by calendar and provider ID, and undo removes s
   assert.equal(calendarLayers([{...event,calendarId:'other'}],[created]).events.length,2,'different calendars must not be deduplicated');
 });
 
-test('overlapping requests and confirmed events remain in distinct clickable lanes',()=>{
+test('requests span the full day column without narrowing confirmed events',()=>{
   const real={start:9,hours:2,overlay:false},a={start:9,hours:2,overlay:true},b={start:10,hours:1,overlay:true};
   const layout=calendarDayLayout([real,a,b]);
-  assert.ok(layout.get(real).left+layout.get(real).width < layout.get(a).left);
-  assert.ok(layout.get(a).left+layout.get(a).width < layout.get(b).left);
-  assert.ok(layout.get(b).left+layout.get(b).width<=100);
+  assert.deepEqual(layout.get(a),{left:1,width:98});
+  assert.deepEqual(layout.get(b),{left:1,width:98});
+  assert.ok(layout.get(real).width>95);
 });

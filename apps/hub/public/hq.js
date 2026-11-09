@@ -30,7 +30,7 @@ const EV_STYLE = {
   gym: { bg: 'var(--accent)', border: 'var(--accent)', line: 'solid', fg: 'var(--n100)', label: 'Training' },
   work: { bg: 'color-mix(in srgb, var(--n100) 16%, transparent)', border: 'transparent', line: 'solid', fg: 'var(--n100)', label: 'Work' },
   life: { bg: 'color-mix(in srgb, var(--accent-2) 30%, transparent)', border: 'transparent', line: 'solid', fg: 'var(--n100)', label: 'Google event' },
-  pend: { bg: 'var(--surface)', border: 'var(--a400)', line: 'dashed', fg: 'var(--a300)', label: 'Moniqr request' },
+  pend: { bg: 'color-mix(in srgb, var(--a400) 14%, transparent)', border: 'var(--a400)', line: 'dashed', fg: 'var(--a200)', label: 'Moniqr request' },
 };
 
 const MOODS = ['Low', 'Meh', 'Okay', 'Good', 'Great'];
@@ -1187,7 +1187,7 @@ class App extends Component {
                         onClick=${pick}
                         style=${`top: ${(e.start - H0) * PX}px; height: ${Math.max(e.hours * PX - 2, 18)}px; background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border}; color: ${c.fg}; left: ${layout.left}%; width: ${layout.width}%; right: auto;`}
                       >
-                        <b>${e.overlay ? 'Request: ' : ''}${e.title}</b><span>${time}</span>
+                        <b>${e.title}</b><span>${time}</span>
                       </button>`;
                     })}
                   ${i === v.todayIdx && html`<div class="now" style=${`top: ${nowTop};`}></div>`}
