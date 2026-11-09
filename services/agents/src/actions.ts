@@ -76,9 +76,11 @@ async function expire(client: PoolClient) {
 }
 
 export function actionView(row: ActionRow, findingStatus?: string, configuredTarget?: string | null, executionEnabled = false) {
+  const demo = row.source_snapshot?.demo === true;
   const rawMissing = row.proposed_action?.missing_details;
   const missing: string[] = Array.isArray(rawMissing) ? rawMissing.filter((v): v is string => typeof v === 'string') : [];
-  if (!row.finding_id || !row.payload_hash) missing.push('This legacy suggestion has no verified finding; it cannot be approved.');
+  if (demo) missing.push('Demo request — preview only. It cannot create a Google event.');
+  else if (!row.finding_id || !row.payload_hash) missing.push('This legacy suggestion has no verified finding; it cannot be approved.');
   if (findingStatus === 'dismissed') missing.push('The source finding was dismissed.');
   if (row.kind === 'calendar_create') {
     if (row.execution_mode === 'enabled' && !executionEnabled) missing.push('Connect calendar write access before approval.');
@@ -89,11 +91,11 @@ export function actionView(row: ActionRow, findingStatus?: string, configuredTar
     if (calendar?.start && Date.parse(calendar.start) <= Date.now()) missing.push('The proposed start time has passed.');
   }
   return { ...row, blocked_reasons: [...new Set(missing)], can_approve: row.status === 'pending' && missing.length === 0,
-    can_prepare: row.kind === 'calendar_create' && row.execution_mode === 'record_only' && executionEnabled &&
+    can_prepare: !demo && row.kind === 'calendar_create' && row.execution_mode === 'record_only' && executionEnabled &&
       ['pending', 'approved'].includes(row.status) && row.execution_status === 'not_requested',
-    can_execute: row.kind === 'calendar_create' && row.execution_mode === 'enabled' && row.status === 'approved' && executionEnabled &&
+    can_execute: !demo && row.kind === 'calendar_create' && row.execution_mode === 'enabled' && row.status === 'approved' && executionEnabled &&
       ['not_requested', 'failed', 'uncertain', 'executing'].includes(row.execution_status),
-    can_undo: ['succeeded','undo_uncertain'].includes(row.execution_status) && executionEnabled };
+    can_undo: !demo && ['succeeded','undo_uncertain'].includes(row.execution_status) && executionEnabled };
 }
 
 export async function proposeAction(pool: Pool, runId: number, input: Proposal, targetCalendar?: string, executionEnabled = false) {
@@ -151,6 +153,7 @@ export async function prepareCalendarAction(pool: Pool, id: number, revision: nu
     if (!identity) throw new NotFoundError('Action not found.');
     const f = (await client.query('SELECT * FROM email_findings WHERE id=$1 FOR UPDATE', [identity.finding_id])).rows[0];
     const row = (await client.query<ActionRow>('SELECT * FROM approvals WHERE id=$1 FOR UPDATE', [id])).rows[0]!;
+    if (row.source_snapshot?.demo === true) throw new ConflictError('Demo requests cannot be enabled for creation.');
     if (row.revision !== revision) throw new ConflictError('The proposal changed. Reload it.');
     if (row.kind !== 'calendar_create' || !['pending','approved'].includes(row.status) || row.execution_status !== 'not_requested' ||
       !f || f.status === 'dismissed' || !row.expires_at || row.expires_at.getTime() <= Date.now()) throw new ConflictError('This proposal cannot be prepared for creation.');
@@ -171,9 +174,11 @@ export async function listActions(pool: Pool, pendingOnly = false, targetCalenda
     await expire(client);
     const { rows } = await client.query<ActionRow & { finding_status: string }>(`SELECT a.*, f.status AS finding_status
       FROM approvals a LEFT JOIN email_findings f ON f.id=a.finding_id
-      ${pendingOnly ? "WHERE a.status='pending'" : ''}
+      ${pendingOnly ? "WHERE a.status='pending' AND (a.source_snapshot->>'demo') IS DISTINCT FROM 'true'" : ''}
       ORDER BY (a.status='pending') DESC, a.created_at DESC, a.id DESC LIMIT ${pendingOnly ? 30 : 200}`);
-    const counts = (await client.query("SELECT count(*)::int AS total, count(*) FILTER (WHERE status='pending')::int AS pending FROM approvals")).rows[0];
+    const counts = (await client.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE status='pending')::int AS pending,
+      count(*) FILTER (WHERE status='pending' AND source_snapshot->>'demo'='true')::int AS demo_pending FROM approvals
+      ${pendingOnly ? "WHERE (source_snapshot->>'demo') IS DISTINCT FROM 'true'" : ''}`)).rows[0];
     return { items: rows.map(row => actionView(row, row.finding_status, targetCalendar?.trim() || null, executionEnabled)), calendar_write_ready: executionEnabled, target_calendar: targetCalendar || null, ...counts };
   });
 }

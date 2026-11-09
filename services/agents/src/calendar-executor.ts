@@ -34,6 +34,7 @@ export async function executeCalendarAction(pool: Pool, writer: CalendarWriter, 
     if (!identity) throw new NotFoundError('Action not found.');
     const f = (await client.query('SELECT * FROM email_findings WHERE id=$1 FOR UPDATE', [identity.finding_id])).rows[0];
     let row = (await client.query<ActionRow>('SELECT * FROM approvals WHERE id=$1 FOR UPDATE', [id])).rows[0]!;
+    if (row.source_snapshot?.demo === true) throw new ConflictError('Demo requests cannot write to Google Calendar.');
     if (row.revision !== revision) throw new ConflictError('The proposal changed. Reload and review it.');
     if (row.kind !== 'calendar_create' || row.status !== 'approved' || row.execution_mode !== 'enabled') throw new ConflictError('This is not an approved executable calendar proposal.');
     if (row.proposed_action.target_calendar !== writer.calendarId || row.calendar_target_id && row.calendar_target_id !== writer.calendarId) throw new ConflictError('The target calendar changed. A fresh review is required.');

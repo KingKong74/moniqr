@@ -86,7 +86,7 @@ export interface ActionProposal {
     target_calendar: string | null;
     missing_details: string[];
   } | null;
-  source_snapshot: { subject?: string; sender?: string; evidence?: string; deadline_text?: string; thread_id?: string; missing_details?: string[] };
+  source_snapshot: { demo?: boolean; subject?: string; sender?: string; evidence?: string; deadline_text?: string; thread_id?: string; missing_details?: string[] };
   blocked_reasons: string[];
   can_approve: boolean;
   can_prepare?: boolean;
@@ -97,7 +97,7 @@ export interface ActionProposal {
   execution_error?: string | null;
   executed_at?: string | null;
 }
-export interface ActionsData { items: ActionProposal[]; total: number; pending: number; calendar_write_ready?: boolean; target_calendar?: string | null; }
+export interface ActionsData { items: ActionProposal[]; total: number; pending: number; demo_pending?: number; calendar_write_ready?: boolean; target_calendar?: string | null; }
 
 export class AgentApiError extends Error {
   constructor(public status: number, message: string) { super(message); }

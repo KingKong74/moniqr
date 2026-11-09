@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import type { Pool } from '../src/db.js';
-import { decideAction, proposalInput, proposeAction } from '../src/actions.js';
+import { decideAction, proposalInput, proposeAction, listActions, prepareCalendarAction } from '../src/actions.js';
 import { API_TOKEN, RUNNER_TOKEN, freshDatabase, skipReason, startApp } from './helpers.js';
 
 const source = {
@@ -176,4 +176,17 @@ describe('action review', { skip: skipReason }, () => {
     await pool.query("UPDATE approvals SET expires_at=now()-interval '1 day' WHERE id=$1", [rejected.id]);
     assert.equal((await decide(rejected.id, 'rejected', 1)).status, 200);
   });
+  test('demo requests are non-executable, excluded from EA context, and dismissible', async () => {
+    const existingRun=(await pool.query('SELECT id FROM runs ORDER BY id LIMIT 1')).rows[0].id;
+    const row=(await pool.query(`INSERT INTO approvals (run_id,title,detail,kind,source_snapshot,proposed_action)
+      VALUES ($1,'Demo: Study','Preview only','calendar_create','{"demo":true}', $2::jsonb) RETURNING id`,
+      [existingRun,JSON.stringify({instructions:'',calendar:calendar.calendar,target_calendar:'owner-calendar',missing_details:[]})])).rows[0];
+    const shown=(await listActions(pool,false,'owner-calendar',true)).items.find(i=>i.id===row.id)!;
+    assert.equal(shown.can_approve,false);assert.equal(shown.can_prepare,false);assert.equal(shown.can_execute,false);
+    await assert.rejects(prepareCalendarAction(pool,row.id,1,'owner-calendar',true),/Demo requests/);
+    assert.ok(!(await listActions(pool,true)).items.some(i=>i.id===row.id));
+    assert.equal((await decide(row.id,'approved',1)).status,409);
+    assert.equal((await decide(row.id,'rejected',1)).status,200);
+  });
+
 });

@@ -317,7 +317,7 @@ class App extends Component {
       title: calendar.status === 'error' ? 'Calendar unavailable' : 'Calendar not connected',
       note: calendar.status === 'error' ? 'Trying again automatically' : 'Connect Google Calendar',
     };
-    const pending = data.actionsError ? 0 : data.actions.pending;
+    const pending = data.actionsError ? 0 : data.actions.pending - (data.actions.demo_pending ?? 0);
     const unread = data.findings.items.filter((f) => f.status === 'new').length;
     const latest = data.runs[0];
     const workforce = [
@@ -553,6 +553,7 @@ class App extends Component {
       const old = s.data.actions.items.find(a => a.id === action.id);
       return { actionNotice: notice, data: { ...s.data, actions: { ...s.data.actions,
         pending: Math.max(0, s.data.actions.pending + (action.status === 'pending' ? 1 : 0) - (old?.status === 'pending' ? 1 : 0)),
+        demo_pending: Math.max(0, (s.data.actions.demo_pending ?? 0) + (action.source_snapshot?.demo && action.status === 'pending' ? 1 : 0) - (old?.source_snapshot?.demo && old.status === 'pending' ? 1 : 0)),
         items: s.data.actions.items.map(a => a.id === action.id ? action : a),
       } } };
     });
@@ -611,7 +612,7 @@ class App extends Component {
     const history = a && actionHistory?.id === a.id && actionHistory.revision === a.revision ? actionHistory.events : null;
     return html`<section id="actions" class="col" style="gap: 12px;">
       <div class="between wrap" style="gap: 12px;"><h2 style="font-size: 20px;">Action review</h2>
-        <span class="fs13 muted">${data.actionsError ? 'Unavailable' : `${actions.pending} awaiting review`}</span></div>
+        <span class="fs13 muted">${data.actionsError ? 'Unavailable' : `${actions.pending - (actions.demo_pending ?? 0)} awaiting review${actions.demo_pending ? ` · ${actions.demo_pending} demo requests` : ''}`}</span></div>
       <p class="fs12 muted">Only calendar proposals labelled “Creates an event after approval” can write to your main calendar. Manual plans and earlier record-only decisions never execute.</p>
       ${!actions.calendar_write_ready && html`<p class="fs13 dim">Calendar creation needs Google write permission. You can still review requests and see their overlay.</p>`}
       ${data.actionsError && html`<p class="fs13 coral" role="alert">Proposals could not load. Retrying automatically.</p>`}
@@ -635,6 +636,7 @@ class App extends Component {
           </div>
           <article class="reader" aria-label="Proposal details" tabindex="-1">
             <span class="fs12 steel">${labels[a.status]} · Revision ${a.revision}</span>
+            ${a.source_snapshot?.demo && html`<span class="fs13 steel">Demo · Preview only · Never sent to Google</span>`}
             <h3>${a.title}</h3><p class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${a.detail}</p>
             ${a.kind === 'manual' ? html`<div class="col"><span class="fs12 muted">For you to do yourself</span>
               <p class="fs14 text" style="white-space: pre-wrap; overflow-wrap: anywhere;">${payload?.instructions || 'No structured instructions recorded.'}</p></div>` : html`
@@ -657,8 +659,8 @@ class App extends Component {
             ${a.execution_error && html`<p class="fs13 coral" role="status">${a.execution_error}</p>`}
             ${a.decided_at && html`<span class="fs12 muted">Decision recorded: ${when(a.decided_at)}</span>`}
             ${a.status === 'pending' && html`<div class="row wrap">
-              <button class="btn btn-primary" disabled=${actionSaving || !a.can_approve} onClick=${() => this.decideProposal(a, 'approved')}>${a.execution_mode === 'enabled' ? 'Approve and create event' : 'Approve proposal'}</button>
-              <button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.decideProposal(a, 'rejected')}>Reject proposal</button>
+              ${!a.source_snapshot?.demo && html`<button class="btn btn-primary" disabled=${actionSaving || !a.can_approve} onClick=${() => this.decideProposal(a, 'approved')}>${a.execution_mode === 'enabled' ? 'Approve and create event' : 'Approve proposal'}</button>`}
+              <button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.decideProposal(a, 'rejected')}>${a.source_snapshot?.demo ? 'Dismiss demo' : 'Reject proposal'}</button>
             </div>`}
             ${a.can_prepare && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'prepare')}>Enable creation and review again</button>`}
             ${a.can_execute && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'execute')}>${['uncertain','executing'].includes(a.execution_status) ? 'Check result' : 'Retry calendar creation'}</button>`}
