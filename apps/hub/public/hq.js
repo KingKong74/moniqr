@@ -541,10 +541,21 @@ class App extends Component {
         headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ revision: String(a.revision) }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? 'The calendar operation could not be confirmed.');
-      this.setState({ actionNotice: operation === 'prepare' ? 'Calendar creation is enabled for this proposal. Review the new revision and approve it to create the event.'
-        : this.calendarResult(d.action) });
+      this.applyActionResult(d.action, operation === 'prepare' ? 'Calendar creation is enabled for this proposal. Review the new revision and approve it to create the event.'
+        : this.calendarResult(d.action));
     } catch (err) { this.setState({ actionError: err.message }); }
     finally { await this.load(); this.setState({ actionSaving: false }); }
+  }
+
+  applyActionResult(action, notice) {
+    this.setState(s => {
+      if (!action) return { actionNotice: notice };
+      const old = s.data.actions.items.find(a => a.id === action.id);
+      return { actionNotice: notice, data: { ...s.data, actions: { ...s.data.actions,
+        pending: Math.max(0, s.data.actions.pending + (action.status === 'pending' ? 1 : 0) - (old?.status === 'pending' ? 1 : 0)),
+        items: s.data.actions.items.map(a => a.id === action.id ? action : a),
+      } } };
+    });
   }
 
   calendarResult(a) {
@@ -568,9 +579,9 @@ class App extends Component {
         throw new Error(d.error ?? 'Your decision could not be saved. Please try again.');
       }
       const result = r.status === 204 ? null : (await r.json()).action;
-      this.setState({ actionNotice: decision === 'approved' && result?.execution_mode === 'enabled' ? this.calendarResult(result) : decision === 'approved'
+      this.applyActionResult(result, decision === 'approved' && result?.execution_mode === 'enabled' ? this.calendarResult(result) : decision === 'approved'
         ? `Approval recorded for “${action.title}” (revision ${action.revision}). Nothing was executed or queued; manual steps are yours to carry out.`
-        : `Rejection recorded for “${action.title}” (revision ${action.revision}). No external action was taken.` });
+        : `Rejection recorded for “${action.title}” (revision ${action.revision}). No external action was taken.`);
     } catch (err) { this.setState({ actionError: err.message }); }
     finally { await this.load(); this.setState({ actionSaving: false }); }
   }
@@ -650,7 +661,7 @@ class App extends Component {
               <button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.decideProposal(a, 'rejected')}>Reject proposal</button>
             </div>`}
             ${a.can_prepare && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'prepare')}>Enable creation and review again</button>`}
-            ${a.can_execute && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'execute')}>${a.execution_status === 'uncertain' ? 'Check result' : 'Retry calendar creation'}</button>`}
+            ${a.can_execute && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'execute')}>${['uncertain','executing'].includes(a.execution_status) ? 'Check result' : 'Retry calendar creation'}</button>`}
             ${a.can_undo && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'undo')}>${a.execution_status === 'undo_uncertain' ? 'Check undo result' : 'Undo Moniqr event'}</button>`}
             <span class="fs12 muted">${a.execution_status === 'succeeded' ? 'Confirmed on your main calendar.' : a.execution_status === 'undone' ? 'Event removed by your undo.'
               : a.execution_mode === 'record_only' ? 'This decision has not executed anything and cannot be consumed by a future executor.' : 'Creation status: ' + a.execution_status}</span>

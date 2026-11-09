@@ -92,7 +92,7 @@ export function actionView(row: ActionRow, findingStatus?: string, configuredTar
     can_prepare: row.kind === 'calendar_create' && row.execution_mode === 'record_only' && executionEnabled &&
       ['pending', 'approved'].includes(row.status) && row.execution_status === 'not_requested',
     can_execute: row.kind === 'calendar_create' && row.execution_mode === 'enabled' && row.status === 'approved' && executionEnabled &&
-      ['not_requested', 'failed', 'uncertain'].includes(row.execution_status),
+      ['not_requested', 'failed', 'uncertain', 'executing'].includes(row.execution_status),
     can_undo: ['succeeded','undo_uncertain'].includes(row.execution_status) && executionEnabled };
 }
 

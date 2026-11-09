@@ -4,13 +4,32 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { Pool } from './db.js';
-import { withTransaction } from './db.js';
+import type { PoolClient } from 'pg';
 import { actionView, audit, sourceSnapshot, stableJson, type ActionRow } from './actions.js';
 import { ConflictError, NotFoundError } from './runs.js';
 import { CalendarProviderError, eventId, matchesEvent, type CalendarWriter, type EventSpec } from './calendar-writer.js';
 
+/** A session lock survives our deliberate commit of the write-start marker. It
+ * disappears on connection loss, leaving the durable marker for reconciliation.
+ */
+async function withExecutionLock<T>(pool: Pool, id: number, work: (client: PoolClient, durable: () => Promise<void>) => Promise<T>): Promise<T> {
+  const client = await pool.connect(); let locked = false;
+  try {
+    await client.query('SELECT pg_advisory_lock(6846,$1)', [id]); locked = true;
+    await client.query('BEGIN');
+    const result = await work(client, async () => { await client.query('COMMIT'); await client.query('BEGIN'); });
+    await client.query('COMMIT'); return result;
+  } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; }
+  finally {
+    let releaseError: Error | undefined;
+    try { if (locked) await client.query('SELECT pg_advisory_unlock(6846,$1)', [id]); }
+    catch (err) { releaseError = err instanceof Error ? err : new Error('Could not release execution lock.'); }
+    client.release(releaseError);
+  }
+}
+
 export async function executeCalendarAction(pool: Pool, writer: CalendarWriter, id: number, revision: number, undo = false) {
-  return withTransaction(pool, async (client) => {
+  return withExecutionLock(pool, id, async (client, durable) => {
     const identity = (await client.query('SELECT finding_id FROM approvals WHERE id=$1', [id])).rows[0];
     if (!identity) throw new NotFoundError('Action not found.');
     const f = (await client.query('SELECT * FROM email_findings WHERE id=$1 FOR UPDATE', [identity.finding_id])).rows[0];
@@ -39,16 +58,18 @@ export async function executeCalendarAction(pool: Pool, writer: CalendarWriter, 
     if (undo && !['succeeded','undo_uncertain'].includes(row.execution_status)) throw new ConflictError('Only a confirmed Moniqr event can be undone.');
     let existing;
     try { existing = await writer.get(spec.id); }
-    catch { return finish(undo ? 'undo_uncertain' : row.execution_status === 'uncertain' ? 'uncertain' : 'failed', 'Google could not be checked. No new write was attempted.'); }
+    catch { return finish(undo ? 'undo_uncertain' : ['uncertain','executing'].includes(row.execution_status) ? 'uncertain' : 'failed', 'Google could not be checked. No new write was attempted.'); }
     if (existing && !matchesEvent(existing, spec)) return finish(undo ? 'undo_uncertain' : 'uncertain', 'The Google event differs or lacks Moniqr ownership tags. No write or deletion was attempted.');
     if (undo) {
       if (!existing) return finish('undone');
+      row = (await client.query<ActionRow>("UPDATE approvals SET execution_status='undo_uncertain',updated_at=now() WHERE id=$1 RETURNING *", [id])).rows[0]!;
       await audit(client, row, 'undo_started', 'owner');
+      await durable();
       try { await writer.remove(existing); return finish('undone'); }
       catch (err) { return finish('undo_uncertain', err instanceof Error ? err.message : 'Google did not confirm undo.'); }
     }
     if (existing) return finish('succeeded'); // Reconcile even if the source/approval expired after the original request.
-    if (row.execution_status === 'uncertain') return finish('uncertain', 'No event is visible yet. A previous insert was not confirmed; no replacement was created.');
+    if (['uncertain','executing'].includes(row.execution_status)) return finish('uncertain', 'No event is visible yet. A previous insert was not confirmed; no replacement was created.');
     if (!f || f.status === 'dismissed' || stableJson(sourceSnapshot(f)) !== stableJson(row.source_snapshot)) {
       return finish('failed', 'The source changed or was dismissed. Generate and review a fresh proposal.');
     }
@@ -57,6 +78,13 @@ export async function executeCalendarAction(pool: Pool, writer: CalendarWriter, 
       calendar_event_id=$2,calendar_target_id=$3,updated_at=now() WHERE id=$1 RETURNING *`,
       [id, spec.id, writer.calendarId])).rows[0]!;
     await audit(client, row, 'execution_started', 'system');
+    await durable();
+    // Reacquire in source/action order after committing the durable marker.
+    const fresh = (await client.query('SELECT * FROM email_findings WHERE id=$1 FOR UPDATE', [row.finding_id])).rows[0];
+    const current = (await client.query<ActionRow>('SELECT * FROM approvals WHERE id=$1 FOR UPDATE', [id])).rows[0]!;
+    if (current.revision !== revision || current.status !== 'approved' || current.execution_mode !== 'enabled' ||
+      !fresh || fresh.status === 'dismissed' || stableJson(sourceSnapshot(fresh)) !== stableJson(row.source_snapshot) ||
+      !current.expires_at || current.expires_at.getTime() <= Date.now()) return finish('failed', 'The approval or source changed before the write. No event was created.');
     try {
       const created = await writer.create(spec);
       if (!matchesEvent(created, spec)) return finish('uncertain', 'Google returned an unexpected event. Check the result before taking further action.');

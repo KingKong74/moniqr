@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import type { Pool } from '../src/db.js';
 import { calendarWriter, CalendarProviderError, eventId, type CalendarWriter, type EventSpec, type ProviderEvent } from '../src/calendar-writer.js';
 import { executeCalendarAction } from '../src/calendar-executor.js';
+import { decideAction } from '../src/actions.js';
 import { calendarWriteCredentialsFromEnv } from '../src/google.js';
 import { API_TOKEN, RUNNER_TOKEN, freshDatabase, skipReason, startApp } from './helpers.js';
 
@@ -110,6 +111,16 @@ describe('calendar execution and undo', { skip: skipReason }, () => {
     assert.equal(next.revision,a.revision+1);assert.equal(next.status,'pending');
     assert.equal((await approve(a)).status,409);assert.equal(writer.creates,before);
     assert.equal((await approve(next)).body.action.execution_status,'succeeded');assert.equal(writer.creates,before+1);
+  });
+  test('a durable write-start marker after a process crash permits reconciliation only',async()=>{
+    const a=await proposal();const before=writer.creates;
+    await decideAction(pool,a.id,{decision:'approved',revision:a.revision},writer.calendarId,true);
+    await pool.query("UPDATE approvals SET execution_status='executing' WHERE id=$1",[a.id]);
+    writer.failRead=true;
+    assert.equal((await operation(a,'execute')).body.action.execution_status,'uncertain');
+    writer.failRead=false;
+    const r=await operation(a,'execute');
+    assert.equal(r.body.action.execution_status,'uncertain');assert.equal(writer.creates,before);
   });
   test('source changes, dismissed findings, expiry and rejected proposals cannot create events',async()=>{
     const before=writer.creates;
