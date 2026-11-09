@@ -1,9 +1,10 @@
 // HQ, the moniqr.com homepage. A port of the Personal OS HQ v4 design to Preact + htm, loaded as
 // one ES module so there's no build step. The server sends everything to draw from /api/hq:
 // live briefs, runs, calendar, findings and proposal decisions, plus sample lifestyle content
-// (data.mock). Approvals record a decision only; chat, priorities, mood and habits are samples.
-// Nothing here books, buys, sends or queues external actions.
+// (data.mock). Enabled calendar proposals create events only after owner approval;
+// manual/record-only choices never execute. Chat, priorities, mood and habits are samples.
 import { Component, html, render } from '/vendor/preact-htm.js';
+import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -28,8 +29,8 @@ const POLL_MS = 5000;
 const EV_STYLE = {
   gym: { bg: 'var(--accent)', border: 'var(--accent)', line: 'solid', fg: 'var(--n100)', label: 'Training' },
   work: { bg: 'color-mix(in srgb, var(--n100) 16%, transparent)', border: 'transparent', line: 'solid', fg: 'var(--n100)', label: 'Work' },
-  life: { bg: 'color-mix(in srgb, var(--accent-2) 30%, transparent)', border: 'transparent', line: 'solid', fg: 'var(--n100)', label: 'Personal' },
-  pend: { bg: 'transparent', border: 'var(--a400)', line: 'dashed', fg: 'var(--a300)', label: 'Awaiting decision' },
+  life: { bg: 'color-mix(in srgb, var(--accent-2) 30%, transparent)', border: 'transparent', line: 'solid', fg: 'var(--n100)', label: 'Google event' },
+  pend: { bg: 'var(--surface)', border: 'var(--a400)', line: 'dashed', fg: 'var(--a300)', label: 'Moniqr request' },
 };
 
 const MOODS = ['Low', 'Meh', 'Okay', 'Good', 'Great'];
@@ -287,8 +288,10 @@ class App extends Component {
     const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - todayIdx * DAY_MS);
     const week = DOW.map((_, i) => new Date(monday.getTime() + i * DAY_MS));
     const weekStart = monday.getTime() - 10 * 3_600_000;
-    const calendar = data.calendar ?? { status: 'disconnected', events: [] };
-    for (const event of calendar.events) {
+    const originalCalendar = data.calendar ?? { status: 'disconnected', events: [] };
+    const layers = calendarLayers(originalCalendar.events, data.actions.items, this.state.showRequests !== false);
+    const calendar = { ...originalCalendar, events: layers.events };
+    for (const event of [...calendar.events, ...layers.requests]) {
       if (event.response === 'declined') continue;
       const start = event.allDay ? Date.parse(event.start + 'T00:00:00+10:00') : Date.parse(event.start);
       const end = event.allDay ? Date.parse(event.end + 'T00:00:00+10:00') : Date.parse(event.end);
@@ -300,7 +303,7 @@ class App extends Component {
         else mock.events.push({
           day, start: (Math.max(start, dayStart) - dayStart) / 3_600_000,
           hours: (Math.min(end, dayStart + DAY_MS) - Math.max(start, dayStart)) / 3_600_000,
-          title: event.title, kind: event.response === 'tentative' ? 'pend' : 'life',
+          title: event.title, kind: event.overlay ? 'pend' : 'life', overlay: !!event.overlay, actionId: event.actionId,
           note: [event.calendar, event.location].filter(Boolean).join(' · '),
         });
       }
@@ -517,9 +520,39 @@ class App extends Component {
     return html`<section class="decision col" style="gap: 12px;">
       <span class="fs12 steel">Your decisions</span>
       <h2>${this.state.data.actionsError ? 'Action review unavailable' : v.pending ? `${v.pending} proposal${v.pending === 1 ? '' : 's'} to review` : 'No pending proposals'}</h2>
-      <p class="fs14 soft">Inspect the source and proposed details before deciding. Approval records your choice only; nothing is executed or queued for later.</p>
+      <p class="fs14 soft">Inspect the source and details before deciding. Calendar proposals explicitly enabled for creation add an event after approval; manual suggestions stay yours to carry out.</p>
       <button class="btn btn-secondary" onClick=${() => document.getElementById('actions')?.scrollIntoView({ behavior: 'smooth' })}>Review proposals</button>
     </section>`;
+  }
+
+  openProposal(id) {
+    this.setState({ actionSel: id, actionFilter: 'all', actionHistory: null, actionError: '', pick: null }, () => {
+      document.getElementById('actions')?.scrollIntoView({ behavior: 'smooth' });
+      document.querySelector('#actions article')?.focus({ preventScroll: true });
+    });
+  }
+
+  async calendarOperation(a, operation) {
+    if (this.state.actionSaving) return;
+    if (operation === 'undo' && !window.confirm(`Remove the Moniqr-created event “${a.proposed_action?.calendar?.title}” from your main calendar?`)) return;
+    this.setState({ actionSaving: true, actionError: '', actionNotice: '', actionHistory: null });
+    try {
+      const r = await fetch(`/actions/${a.id}/${operation}`, { method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ revision: String(a.revision) }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? 'The calendar operation could not be confirmed.');
+      this.setState({ actionNotice: operation === 'prepare' ? 'Calendar creation is enabled for this proposal. Review the new revision and approve it to create the event.'
+        : this.calendarResult(d.action) });
+    } catch (err) { this.setState({ actionError: err.message }); }
+    finally { await this.load(); this.setState({ actionSaving: false }); }
+  }
+
+  calendarResult(a) {
+    return a?.execution_status === 'succeeded' ? 'Confirmed: the event is on your main Google calendar.'
+      : a?.execution_status === 'undone' ? 'Undo confirmed: the Moniqr-created event is no longer on your calendar.'
+      : a?.execution_status === 'uncertain' || a?.execution_status === 'undo_uncertain' ? 'Google has not confirmed the result. Use Check result before taking further action.'
+      : a?.execution_status === 'failed' ? `The calendar event was not created. ${a.execution_error || 'Please check the details.'}`
+      : 'Your choice was recorded. No external action was taken.';
   }
 
   async decideProposal(action, decision) {
@@ -534,7 +567,8 @@ class App extends Component {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.error ?? 'Your decision could not be saved. Please try again.');
       }
-      this.setState({ actionNotice: decision === 'approved'
+      const result = r.status === 204 ? null : (await r.json()).action;
+      this.setState({ actionNotice: decision === 'approved' && result?.execution_mode === 'enabled' ? this.calendarResult(result) : decision === 'approved'
         ? `Approval recorded for “${action.title}” (revision ${action.revision}). Nothing was executed or queued; manual steps are yours to carry out.`
         : `Rejection recorded for “${action.title}” (revision ${action.revision}). No external action was taken.` });
     } catch (err) { this.setState({ actionError: err.message }); }
@@ -566,8 +600,9 @@ class App extends Component {
     const history = a && actionHistory?.id === a.id && actionHistory.revision === a.revision ? actionHistory.events : null;
     return html`<section id="actions" class="col" style="gap: 12px;">
       <div class="between wrap" style="gap: 12px;"><h2 style="font-size: 20px;">Action review</h2>
-        <span class="fs13 muted">${data.actionsError ? 'Unavailable' : `${actions.pending} awaiting review`} · Decisions only</span></div>
-      <p class="fs12 muted">Approvals are saved decisions. No calendar event, message, booking or payment is executed or queued by this screen.</p>
+        <span class="fs13 muted">${data.actionsError ? 'Unavailable' : `${actions.pending} awaiting review`}</span></div>
+      <p class="fs12 muted">Only calendar proposals labelled “Creates an event after approval” can write to your main calendar. Manual plans and earlier record-only decisions never execute.</p>
+      ${!actions.calendar_write_ready && html`<p class="fs13 dim">Calendar creation needs Google write permission. You can still review requests and see their overlay.</p>`}
       ${data.actionsError && html`<p class="fs13 coral" role="alert">Proposals could not load. Retrying automatically.</p>`}
       ${actionError && html`<p class="fs13 coral" role="alert">${actionError}</p>`}
       ${actionNotice && html`<p class="fs13 steel" role="status">${actionNotice}</p>`}
@@ -587,7 +622,7 @@ class App extends Component {
                 <span class="fs14 text ellipsis">${x.title}</span><span class="fs13 muted ellipsis">${x.detail}</span></span>
             </button>`)}
           </div>
-          <article class="reader" aria-label="Proposal details">
+          <article class="reader" aria-label="Proposal details" tabindex="-1">
             <span class="fs12 steel">${labels[a.status]} · Revision ${a.revision}</span>
             <h3>${a.title}</h3><p class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${a.detail}</p>
             ${a.kind === 'manual' ? html`<div class="col"><span class="fs12 muted">For you to do yourself</span>
@@ -607,12 +642,18 @@ class App extends Component {
             ${a.blocked_reasons.length > 0 && html`<div class="col"><span class="fs12 muted">Needs clarification before approval</span>
               <ul class="fs13 soft">${a.blocked_reasons.map((reason) => html`<li>${reason}</li>`)}</ul></div>`}
             <span class="fs12 muted">Expires: ${when(a.expires_at)}</span>
+            <span class="fs13 steel">${a.execution_mode === 'enabled' ? 'Creates an event after approval' : 'Record-only decision · Does not create an event'}</span>
+            ${a.execution_error && html`<p class="fs13 coral" role="status">${a.execution_error}</p>`}
             ${a.decided_at && html`<span class="fs12 muted">Decision recorded: ${when(a.decided_at)}</span>`}
             ${a.status === 'pending' && html`<div class="row wrap">
-              <button class="btn btn-primary" disabled=${actionSaving || !a.can_approve} onClick=${() => this.decideProposal(a, 'approved')}>Approve proposal</button>
+              <button class="btn btn-primary" disabled=${actionSaving || !a.can_approve} onClick=${() => this.decideProposal(a, 'approved')}>${a.execution_mode === 'enabled' ? 'Approve and create event' : 'Approve proposal'}</button>
               <button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.decideProposal(a, 'rejected')}>Reject proposal</button>
             </div>`}
-            <span class="fs12 muted">${a.status === 'approved' ? 'Your choice is recorded. This action has not been executed and is not queued for future execution.' : 'Nothing has been executed. Calendar execution is a later feature.'}</span>
+            ${a.can_prepare && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'prepare')}>Enable creation and review again</button>`}
+            ${a.can_execute && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'execute')}>${a.execution_status === 'uncertain' ? 'Check result' : 'Retry calendar creation'}</button>`}
+            ${a.can_undo && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'undo')}>${a.execution_status === 'undo_uncertain' ? 'Check undo result' : 'Undo Moniqr event'}</button>`}
+            <span class="fs12 muted">${a.execution_status === 'succeeded' ? 'Confirmed on your main calendar.' : a.execution_status === 'undone' ? 'Event removed by your undo.'
+              : a.execution_mode === 'record_only' ? 'This decision has not executed anything and cannot be consumed by a future executor.' : 'Creation status: ' + a.execution_status}</span>
             <button class="btn btn-ghost sm" onClick=${() => this.showActionHistory(a.id)}>Decision history</button>
             ${history && html`<ul class="fs12 dim">${history.length ? history.map((event) => html`<li>Revision ${event.revision}: ${event.event_type} · ${event.actor} · ${when(event.created_at)}</li>`) : html`<li>No recorded events for this legacy suggestion.</li>`}</ul>`}
           </article>
@@ -1048,7 +1089,6 @@ class App extends Component {
   }
 
   renderCalendar(v) {
-    const { ap } = this.state;
     const gridH = `${(H1 - H0) * PX}px`;
     const hours = [];
     for (let h = H0 + 1; h < H1; h++) hours.push({ top: `${(h - H0) * PX}px`, label: h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM` });
@@ -1058,27 +1098,29 @@ class App extends Component {
       first.getUTCMonth() === last.getUTCMonth()
         ? `${MONTHS[first.getUTCMonth()]} ${first.getUTCFullYear()}`
         : `${MONTHS[first.getUTCMonth()]} – ${MONTHS[last.getUTCMonth()]} ${last.getUTCFullYear()}`;
-    const events = v.mock.events
-      .filter((e) => !e.mailId || ap[e.mailId] !== 'rejected')
-      .map((e) => ({ ...e, kind: e.mailId && ap[e.mailId] !== 'completed' ? 'pend' : e.kind }));
+    const events = v.mock.events;
+    const layouts = v.week.map((_, day) => calendarDayLayout(events.filter(e => e.day === day)));
     const nowTop = `${(Math.min(Math.max(v.hour, H0), H1) - H0) * PX}px`;
     const swatch = (c) => `background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border === 'transparent' ? c.bg : c.border};`;
     const picked = this.state.pick;
     const calendarStatus = this.state.data.calendar?.status ?? 'disconnected';
     return html`
-      <section class="col" style="gap: 12px;">
+      <section id="calendar" class="col" style="gap: 12px;">
         <div class="row wrap" style="gap: 10px;">
           <button class="btn btn-secondary" style="border-radius: 18px; padding: 6px 16px;">Today</button>
           <h2 style="font-weight: 400; font-size: 20px;">${title}</h2>
           <div style="flex: 1;"></div>
           <div class="row wrap fs12 dim" style="gap: 12px;">
-            ${Object.values(EV_STYLE).map((c) => html`<span class="row nowrap" style="gap: 6px;"><span class="swatch" style=${swatch(c)}></span>${c.label}</span>`)}
+            ${[EV_STYLE.life, EV_STYLE.pend].map((c) => html`<span class="row nowrap" style="gap: 6px;"><span class="swatch" style=${swatch(c)}></span>${c.label}</span>`)}
           </div>
         </div>
         <p class="fs12 muted">${calendarStatus === 'connected'
-          ? (events.length || v.mock.allDay.length ? 'Google Calendar · Read-only · Brisbane time' : 'No events this week · Google Calendar · Brisbane time')
+          ? (events.length || v.mock.allDay.length ? 'Google Calendar + Moniqr requests · Brisbane time' : 'No events this week · Google Calendar · Brisbane time')
           : calendarStatus === 'error' ? 'Google Calendar could not load. Retrying automatically.'
           : 'Google Calendar is not connected. Configure the Google connection to show your events.'}</p>
+        <label class="fs13 dim row"><input type="checkbox" checked=${this.state.showRequests !== false}
+          onChange=${(e) => this.setState({ showRequests: e.target.checked })} />Show Moniqr requests</label>
+        ${this.state.data.actionsError && html`<p class="fs12 coral">The request overlay could not load. Confirmed Google events are shown separately.</p>`}
         <div class="cal-scroll">
           <div class="cal">
             <div class="cal-row">
@@ -1114,7 +1156,8 @@ class App extends Component {
                     .map((e) => {
                       const c = EV_STYLE[e.kind];
                       const time = `${hhmm(e.start)}–${hhmm(e.start + e.hours)}`;
-                      const pick = () =>
+                      const layout = layouts[i].get(e);
+                      const pick = () => e.actionId ? this.openProposal(e.actionId) :
                         this.setState({
                           pick: {
                             title: e.title,
@@ -1124,13 +1167,15 @@ class App extends Component {
                             swatch: swatch(c),
                           },
                         });
-                      return html`<div
-                        class="ev"
+                      return html`<button type="button"
+                        class=${`ev${e.overlay ? ' request' : ''}`}
+                        aria-label=${`${e.overlay ? 'Moniqr request: ' : 'Event: '}${e.title}, ${time}`}
+                        title=${`${e.overlay ? 'Moniqr request: ' : ''}${e.title} · ${time}${e.note ? ' · ' + e.note : ''}`}
                         onClick=${pick}
-                        style=${`top: ${(e.start - H0) * PX}px; height: ${Math.max(e.hours * PX - 2, 18)}px; background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border}; color: ${c.fg};`}
+                        style=${`top: ${(e.start - H0) * PX}px; height: ${Math.max(e.hours * PX - 2, 18)}px; background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border}; color: ${c.fg}; left: ${layout.left}%; width: ${layout.width}%; right: auto;`}
                       >
-                        <b>${e.title}</b><span>${time}</span>
-                      </div>`;
+                        <b>${e.overlay ? 'Request: ' : ''}${e.title}</b><span>${time}</span>
+                      </button>`;
                     })}
                   ${i === v.todayIdx && html`<div class="now" style=${`top: ${nowTop};`}></div>`}
                 </div>`,

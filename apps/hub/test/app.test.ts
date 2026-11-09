@@ -12,9 +12,11 @@ const queued: RunKind[] = [];
 let failAgents = false;
 const decisions: unknown[] = [];
 const actionDecisions: unknown[] = [];
+const calendarOperations: unknown[] = [];
 let staleAction = false;
 
 const agents: AgentsClient = {
+  calendarAction: async (id, operation, revision) => { calendarOperations.push({ id, operation, revision }); return { id } as any; },
   actions: async () => {
     if (failAgents) throw new Error('down');
     return { items: [], total: 0, pending: 0 };
@@ -218,4 +220,18 @@ test('finding decisions require sign-in, same origin and a supported status', as
   assert.equal((await decide('1', 'approved', { ...authed, origin: ORIGIN })).status, 400);
   assert.equal((await decide('1', 'reviewed', { ...authed, origin: ORIGIN })).status, 204);
   assert.deepEqual(decisions.splice(0), [{ id: 1, status: 'reviewed' }]);
+});
+
+test('calendar prepare, retry and undo require owner authentication, origin and revision', async () => {
+  for (const operation of ['prepare','execute','undo']) {
+    const send = (body: string, headers: Record<string,string>) => fetch(`${base}/actions/1/${operation}`, {
+      method:'POST', headers:{'content-type':'application/x-www-form-urlencoded',...headers},body,
+    });
+    assert.equal((await send('revision=1',{origin:ORIGIN})).status,403);
+    assert.equal((await send('revision=1',authed)).status,403);
+    assert.equal((await send('revision=1',{...authed,origin:'https://evil.example'})).status,403);
+    assert.equal((await send('revision=bad',{...authed,origin:ORIGIN})).status,400);
+    assert.equal((await send('revision=1',{...authed,origin:ORIGIN})).status,200);
+  }
+  assert.deepEqual(calendarOperations.splice(0).map((o:any)=>o.operation),['prepare','execute','undo']);
 });

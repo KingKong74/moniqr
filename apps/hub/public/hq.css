@@ -176,7 +176,8 @@ input::placeholder { color: var(--n500); }
 .hour { position: absolute; right: 8px; transform: translateY(-50%); font-size: 10px; color: var(--n500); }
 .hour-line { position: absolute; left: 0; right: 0; border-top: 1px solid var(--divider); }
 .day-col { position: relative; border-left: 1px solid var(--divider); }
-.ev { position: absolute; left: 3px; right: 3px; padding: 3px 6px; border-radius: 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; border-width: 1px; }
+.ev { position: absolute; left: 3px; right: 3px; padding: 3px 6px; border-radius: 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; border-width: 1px; font: inherit; text-align: left; }
+.ev.request { z-index: 2; }
 .ev b { flex-shrink: 0; font-size: 11px; font-weight: 500; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ev span { font-size: 10px; line-height: 1.25; opacity: 0.8; white-space: nowrap; overflow: hidden; }
 .now { position: absolute; left: -4px; right: 0; height: 0; border-top: 2px solid var(--accent-2); }

@@ -58,7 +58,8 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
     'Proposals are suggestions for review, never executed actions. Do not re-propose dismissed findings or rejected actions. ' +
     'Finish the email searches, save findings and proposals before calling write_brief. Mention any failed or partial searches in the brief.';
   const approvals = ' Call list_action_proposals and include pending decisions that matter, noting any missing details. ' +
-    'A saved proposal or approval is not evidence of execution. All current approvals are record-only: nothing was sent, paid, booked or added to a calendar.';
+    'A saved proposal or approval is not evidence of execution. Only an explicit succeeded execution state or an actual calendar read confirms creation. ' +
+    'Manual and record-only decisions do not execute; never claim that messages were sent, bills paid or bookings made.';
   switch (claimed.run.kind) {
     case 'morning_brief':
       if (!sources.google) return `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ${noData}${approvals}`;

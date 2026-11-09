@@ -6,6 +6,7 @@
 
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+export const CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
 /** Every scope the refresh token holds. Each one is read-only. */
 export const GOOGLE_SCOPES = [CALENDAR_SCOPE, GMAIL_SCOPE];
 
@@ -32,6 +33,13 @@ export function googleCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): 
   return { clientId: clientId!, clientSecret: clientSecret!, refreshToken: refreshToken! };
 }
 
+/** Kept only in the API environment; never shared with the runner or model. */
+export function calendarWriteCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): GoogleCredentials | null {
+  if (!env.GOOGLE_CALENDAR_WRITE_REFRESH_TOKEN) return null;
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) throw new Error('Calendar writer requires the OAuth client ID and secret.');
+  return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, refreshToken: env.GOOGLE_CALENDAR_WRITE_REFRESH_TOKEN };
+}
+
 export interface CalendarSummary {
   id: string;
   name: string;
@@ -39,6 +47,8 @@ export interface CalendarSummary {
 }
 
 export interface CalendarEvent {
+  id?: string;
+  calendarId?: string;
   calendar: string;
   title: string;
   /** ISO date-time, or YYYY-MM-DD for all-day events. */
@@ -70,6 +80,7 @@ export function googleAccessToken(creds: GoogleCredentials, fetchImpl: typeof fe
         refresh_token: creds.refreshToken,
         grant_type: 'refresh_token',
       }),
+      signal: AbortSignal.timeout(10_000),
     });
     const data = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
     if (!res.ok || !data.access_token) {
@@ -106,8 +117,9 @@ export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch
   }
 
   /** Events overlapping [timeMin, timeMax) across every calendar, soonest first. */
-  async function listEvents(timeMin: Date, timeMax: Date): Promise<CalendarEvent[]> {
-    const calendars = await listCalendars();
+  async function listEvents(timeMin: Date, timeMax: Date, calendarId?: string): Promise<CalendarEvent[]> {
+    const calendars = (await listCalendars()).filter(c => !calendarId || c.id === calendarId || calendarId === 'primary' && c.primary);
+    if (calendarId && !calendars.length) throw new Error('The selected calendar is not accessible.');
     const perCalendar = await Promise.all(
       calendars.map(async (cal) => {
         const data = await get<{ items?: RawEvent[] }>(`/calendars/${encodeURIComponent(cal.id)}/events`, {
@@ -118,7 +130,7 @@ export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch
           maxResults: '250',
           timeZone: 'Australia/Brisbane',
         });
-        return (data.items ?? []).filter((e) => e.status !== 'cancelled').map((e) => toEvent(cal.name, e));
+        return (data.items ?? []).filter((e) => e.status !== 'cancelled').map((e) => ({ ...toEvent(cal.name, e), calendarId: cal.id }));
       }),
     );
     return perCalendar.flat().sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
@@ -128,6 +140,7 @@ export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch
 }
 
 interface RawEvent {
+  id?: string;
   status?: string;
   summary?: string;
   description?: string;
@@ -142,6 +155,7 @@ function toEvent(calendar: string, e: RawEvent): CalendarEvent {
   const description = e.description?.trim();
   const response = e.attendees?.find((a) => a.self)?.responseStatus;
   return {
+    ...(e.id ? { id: e.id } : {}),
     calendar,
     title: e.summary?.trim() || '(no title)',
     start: e.start?.dateTime ?? e.start?.date ?? '',

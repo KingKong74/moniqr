@@ -110,12 +110,27 @@ export function createApp(opts: HubOptions) {
     if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(revision) || revision <= 0 || !['approved', 'rejected'].includes(decision)) {
       return void res.status(400).json({ error: 'Invalid action decision.' });
     }
-    try { await opts.agents.decideAction(id, decision, revision); res.status(204).end(); }
+    try {
+      const action = await opts.agents.decideAction(id, decision, revision);
+      if (action) res.json({ action }); else res.status(204).end();
+    }
     catch (err) {
       if (err instanceof AgentApiError && [400, 404, 409].includes(err.status)) return void res.status(err.status).json({ error: err.message });
       throw err;
     }
   });
+
+  for (const operation of ['prepare','execute','undo'] as const) app.post(`/actions/:id/${operation}`,
+    express.urlencoded({ extended: false, limit: '1kb' }), async (req, res) => {
+      if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });
+      const id = Number(req.params.id), revision = Number(req.body?.revision);
+      if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(revision) || revision <= 0) return void res.status(400).json({ error: 'Invalid action revision.' });
+      try { res.json({ action: await opts.agents.calendarAction!(id, operation, revision) }); }
+      catch (err) {
+        if (err instanceof AgentApiError && [400,404,409].includes(err.status)) return void res.status(err.status).json({ error: err.message });
+        throw err;
+      }
+    });
 
   app.post('/findings/:id/status', express.urlencoded({ extended: false, limit: '1kb' }), async (req, res) => {
     if (req.header('origin') !== canonical.origin) return void res.status(403).send('Cross-site request refused.');

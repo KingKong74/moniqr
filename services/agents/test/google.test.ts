@@ -32,6 +32,18 @@ test('credentials are all-or-nothing', () => {
   assert.throws(() => googleCredentialsFromEnv({ GOOGLE_CLIENT_ID: 'a' }), /all of/);
 });
 
+test('the dashboard can select the main calendar without changing the EA all-calendar reader', async () => {
+  const google = fakeGoogle({
+    '/calendar/v3/users/me/calendarList': { items: [{ id: 'main', primary: true }, { id: 'other' }] },
+    '/calendar/v3/calendars/main/events': { items: [{ id: 'provider1', summary: 'Main event', start: { dateTime: '2027-01-01T09:00:00+10:00' }, end: { dateTime: '2027-01-01T10:00:00+10:00' } }] },
+  });
+  const c = googleCalendar(creds, google.impl);
+  const events = await c.listEvents(new Date(), new Date(Date.now()+86400000), 'primary');
+  assert.equal(events[0]!.id, 'provider1'); assert.equal(events[0]!.calendarId, 'main');
+  assert.ok(!google.calls.some(c => c.includes('/calendars/other/events')));
+  await assert.rejects(c.listEvents(new Date(), new Date(), 'missing'), /not accessible/);
+});
+
 test('events from every calendar are merged, soonest first, without cancelled ones', async () => {
   const google = fakeGoogle({
     '/calendar/v3/users/me/calendarList': {

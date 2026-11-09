@@ -1,5 +1,6 @@
 /**
- * One-off: get a read-only Google refresh token (Calendar and Gmail) and save it to an env file.
+ * One-off OAuth grant. Default: read-only Calendar/Gmail. --calendar-write obtains
+ * a separate API-only events.owned token without replacing the read credential.
  *
  *   npm run google-auth -w services/agents [-- path/to/ops.env]
  *
@@ -12,11 +13,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
-import { GOOGLE_SCOPES, scopesMatch } from './google.js';
+import { GOOGLE_SCOPES, scopesMatch, CALENDAR_WRITE_SCOPE } from './google.js';
 
 const PORT = 8765;
 const REDIRECT_URI = `http://127.0.0.1:${PORT}/`;
-const envPath = process.argv[2] ?? `${homedir()}/.config/moniqr/ops.env`;
+const writeCalendar = process.argv.includes('--calendar-write');
+const envPath = process.argv.slice(2).find(v => v !== '--calendar-write') ?? `${homedir()}/.config/moniqr/ops.env`;
+const scopes = writeCalendar ? [CALENDAR_WRITE_SCOPE] : GOOGLE_SCOPES;
 
 function readEnvFile(path: string): Record<string, string> {
   try {
@@ -59,7 +62,7 @@ consent.search = new URLSearchParams({
   client_id: clientId,
   redirect_uri: REDIRECT_URI,
   response_type: 'code',
-  scope: GOOGLE_SCOPES.join(' '),
+  scope: scopes.join(' '),
   access_type: 'offline',
   prompt: 'consent',
   state,
@@ -67,7 +70,7 @@ consent.search = new URLSearchParams({
   code_challenge_method: 'S256',
 }).toString();
 
-console.log(`\n1. Open this link and allow read-only calendar and Gmail access. Leave both boxes ticked:\n\n${consent}\n`);
+console.log(`\n1. Open this link and allow ${writeCalendar ? 'access to events on calendars you own. This separate credential stays on the API server' : 'read-only calendar and Gmail access. Leave both boxes ticked'}:\n\n${consent}\n`);
 console.log(
   `2. Google then sends you to ${REDIRECT_URI}. If this machine's browser opened it, you're done.\n` +
     '   If the page fails to load (browser on another device), copy the whole address from the\n' +
@@ -76,6 +79,7 @@ console.log(
 
 async function finish(callbackUrl: string): Promise<string> {
   const url = new URL(callbackUrl, REDIRECT_URI);
+  if (url.origin !== new URL(REDIRECT_URI).origin || url.pathname !== '/') throw new Error('Use the loopback redirect address from this sign-in attempt.');
   if (url.searchParams.get('error')) throw new Error(`Google said: ${url.searchParams.get('error')}`);
   if (url.searchParams.get('state') !== state) throw new Error('State mismatch; start again.');
   const code = url.searchParams.get('code');
@@ -96,9 +100,12 @@ async function finish(callbackUrl: string): Promise<string> {
   const data = (await res.json()) as { refresh_token?: string; scope?: string; error?: string; error_description?: string };
   if (!res.ok) throw new Error(`Token exchange failed: ${data.error_description ?? data.error ?? res.status}`);
   if (!data.refresh_token) throw new Error('Google returned no refresh token. Remove the app at myaccount.google.com/permissions and try again.');
-  if (!scopesMatch(data.scope)) throw new Error(`Expected exactly ${GOOGLE_SCOPES.join(', ')} but Google granted: ${data.scope}`);
-  saveToEnvFile(envPath, 'GOOGLE_REFRESH_TOKEN', data.refresh_token);
-  return `Saved GOOGLE_REFRESH_TOKEN to ${envPath} (read-only calendar and Gmail scopes).`;
+  const granted = new Set(data.scope?.trim().split(/\s+/));
+  const valid = writeCalendar ? granted.size === 1 && granted.has(CALENDAR_WRITE_SCOPE) : scopesMatch(data.scope);
+  if (!valid) throw new Error(`Expected exactly ${scopes.join(', ')} but Google granted: ${data.scope}`);
+  const key = writeCalendar ? 'GOOGLE_CALENDAR_WRITE_REFRESH_TOKEN' : 'GOOGLE_REFRESH_TOKEN';
+  saveToEnvFile(envPath, key, data.refresh_token);
+  return `Saved ${key} to ${envPath}. ${writeCalendar ? 'The read-only connection is unchanged.' : 'Read-only calendar and Gmail scopes.'}`;
 }
 
 let done = false;
@@ -115,8 +122,12 @@ const complete = (p: Promise<string>) =>
 
 const server = createServer((req, res) => {
   if (!req.url?.includes('code=') && !req.url?.includes('error=')) return void res.writeHead(404).end();
-  res.writeHead(200, { 'content-type': 'text/plain' }).end('Done. You can close this tab and go back to the terminal.\n');
-  void complete(finish(req.url));
+  void finish(req.url).then(msg => {
+    res.writeHead(200, { 'content-type': 'text/plain' }).end('Connected. You can close this tab.\n', () => complete(Promise.resolve(msg)));
+  }, (err: Error) => {
+    res.writeHead(400, { 'content-type': 'text/plain' }).end('Connection failed. Return to the terminal to retry.\n');
+    console.error(err.message);
+  });
 });
 server.listen(PORT, '127.0.0.1');
 

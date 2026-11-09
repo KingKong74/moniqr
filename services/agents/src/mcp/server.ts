@@ -208,7 +208,8 @@ if (google) {
     title: 'Propose an action for owner review',
     description: 'Propose one manual or calendar_create action per finding/kind. The finding must have been saved in this run. ' +
       'Only propose when useful. Manual instructions are for Bailey to do himself. Calendar times must be explicit and unambiguous; use null and missing_details when unknown. ' +
-      'The target calendar is server-selected. No attendees, arbitrary calendars, sending, payments or provider execution. All approvals are record-only. ' + UNTRUSTED_MAIL,
+      'The target calendar and execution mode are server-selected. You cannot approve, execute or undo a proposal. ' +
+      'Only an explicit owner approval of an enabled calendar proposal can create an event. No attendees, arbitrary calendars, messages or payments. ' + UNTRUSTED_MAIL,
     inputSchema: proposalShape,
   }, async (raw) => {
     try {

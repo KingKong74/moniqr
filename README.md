@@ -71,17 +71,31 @@ Morning briefs and weekly look-aheads can save email findings: bills/deadlines, 
 
 Findings live in Postgres, deduplicated by message and category. Re-scanning updates their content while preserving your reviewed/dismissed state. The hub's **Admin inbox** shows the source, evidence and scan status, and **Scan email** queues a morning-brief run. A scan's coverage is bounded by the existing Gmail searches and result limits; it is not a complete mailbox audit. Partial and failed scans retain existing findings, and a run that never searched email does not count as a successful scan.
 
-Reviewing or dismissing a finding changes Moniqr only. Calendar creation, payments, sending email and attachment downloads are not implemented here. New migrations run on API startup, as existing migrations do.
+Reviewing or dismissing a finding changes Moniqr only. Payments, sending email and attachment downloads are not implemented. Calendar creation is a separate, explicitly approved workflow below. New migrations run on API startup, as existing migrations do.
 
 ## Action review
 
 The EA can propose a manual step or a timed calendar event from a finding it saved in the current run. **Action review** on the hub shows the reason, source evidence, proposed details, missing information, expiry and decision history. Pending proposals are available to brief runs through the read-only `list_action_proposals` tool, including when Google is disconnected.
 
-An approval records your decision only. It neither executes nor queues anything. Approved manual steps are yours to carry out. Every current proposal has `execution_mode=record_only` and `execution_status=not_requested`; a future executor must refuse these rows. Enabling execution will require a fresh reviewed proposal and decision rather than silently consuming older approvals.
+Approved manual steps are yours to carry out. A proposal with `execution_mode=record_only` never executes or queues an external action, even if approved. Calendar proposals explicitly enabled for creation can execute after owner approval, with their separate execution status reported. Earlier record-only approvals require a fresh reviewed revision and decision; they are never silently consumed by the executor.
 
 Proposals deduplicate by finding and kind. A repeated proposal does not extend expiry. Changing the reviewed content increments its revision and invalidates an earlier approval; decisions include that revision so a stale page cannot approve newer content. Rejected and expired proposals never reopen on a scan. Decisions and revisions have durable audit snapshots. Proposals expire after seven days or at the calendar start, whichever is earlier.
 
-Calendar proposals accept only Brisbane times, no attendees, and no model-selected calendar. Optional `GOOGLE_WRITE_CALENDAR_ID` in the API environment selects the destination shown for review; missing destination, unresolved details or a dismissed source block approval. This setting does not grant Google write permissions or enable execution. Gmail and Calendar scopes stay read-only.
+Calendar proposals accept only Brisbane times, no attendees, and no model-selected calendar. `GOOGLE_WRITE_CALENDAR_ID` in the API environment selects Bailey's main calendar. Missing destination, unresolved details or a dismissed source block approval. The EA's Gmail and calendar reader remains separate from the writer.
+
+## Calendar creation and request overlay
+
+The dashboard shows the main Google calendar as its base and a toggleable local overlay of dated Moniqr requests. Clicking a request opens its source and review controls. Missing or ambiguous dates stay in Action review. Rejected/expired requests are excluded. A confirmed creation replaces the request once, matched by calendar/event ID; a temporary syncing card lasts at most two minutes, so a missing/deleted Google event is not perpetuated indefinitely.
+
+Calendar creation uses a separate API-only refresh token with Google's [`calendar.events.owned` permission](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert). The server fixes one calendar; the writer cannot invite attendees or edit events. It supplies a deterministic event ID and [private ownership properties](https://developers.google.com/workspace/calendar/api/guides/extended-properties). An uncertain insert is reconciled by ID, never blindly inserted again. Undo is an owner-only operation: the event must still match its Moniqr tags and reviewed details, with an ETag condition protecting against changes between checking and deleting.
+
+To connect writing:
+
+1. Select the main calendar's actual ID as `GOOGLE_WRITE_CALENDAR_ID` in the API environment.
+2. Run `npm run google-auth -w services/agents -- --calendar-write`. Complete Google's permission grant. The helper saves `GOOGLE_CALENDAR_WRITE_REFRESH_TOKEN` separately in `~/.config/moniqr/ops.env`; it does not replace the existing read token.
+3. Set that separate token and `GOOGLE_CALENDAR_WRITES_ENABLED=true` in the **API** environment, then redeploy. Never pass the write token to the runner/model. With no token or the switch off, the overlay and read connection still work.
+
+New calendar proposals are explicitly labelled **Creates an event after approval** when writing is enabled. Existing record-only decisions never execute automatically: **Enable creation and review again** makes a new pending revision, which needs a fresh owner approval. Manual plans always remain record-only. Failed and uncertain results are shown separately; **Check result** on an uncertain insert only reads/reconciles and will not make a second insert. No automatic-add sender rules are configured, so every creation requires owner approval; unverified From headers never authorise automatic writes.
 
 ## Deploying on Dokploy
 

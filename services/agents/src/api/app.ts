@@ -13,7 +13,9 @@ import {
 import { nextFireAfter } from '../scheduler.js';
 import { bearer, safeEqual } from '../tokens.js';
 import { findingInput, scanInput, listFindings, saveFinding, saveScan } from '../findings.js';
-import { proposalInput, decisionInput, proposeAction, listActions, getAction, decideAction } from '../actions.js';
+import { proposalInput, decisionInput, proposeAction, listActions, getAction, decideAction, prepareCalendarAction } from '../actions.js';
+import type { CalendarWriter } from '../calendar-writer.js';
+import { executeCalendarAction } from '../calendar-executor.js';
 
 function isValidCron(cron: string): boolean {
   try {
@@ -36,6 +38,7 @@ export interface AppOptions {
   staleRunMs: number;
   calendar?: { listEvents(start: Date, end: Date): Promise<unknown[]> } | null;
   actionCalendarId?: string;
+  calendarWriter?: CalendarWriter | null;
 }
 
 const idParam = z.coerce.number().int().positive();
@@ -58,10 +61,27 @@ export function createApp(opts: AppOptions) {
   const hub = requireToken(opts.apiToken);
   const runner = requireToken(opts.runnerToken);
 
-  app.get('/actions', hub, async (_req, res) => { res.json(await listActions(pool, false, opts.actionCalendarId)); });
-  app.get('/actions/:id', hub, async (req, res) => { res.json(await getAction(pool, idParam.parse(req.params.id), opts.actionCalendarId)); });
+  const revisionBody = z.object({ revision: z.number().int().positive() }).strict();
+  app.get('/actions', hub, async (_req, res) => { res.json(await listActions(pool, false, opts.actionCalendarId, !!opts.calendarWriter)); });
+  app.get('/actions/:id', hub, async (req, res) => { res.json(await getAction(pool, idParam.parse(req.params.id), opts.actionCalendarId, !!opts.calendarWriter)); });
   app.post('/actions/:id/decision', hub, async (req, res) => {
-    const action = await decideAction(pool, idParam.parse(req.params.id), decisionInput.parse(req.body), opts.actionCalendarId);
+    let action = await decideAction(pool, idParam.parse(req.params.id), decisionInput.parse(req.body), opts.actionCalendarId, !!opts.calendarWriter);
+    if (action.status === 'approved' && action.kind === 'calendar_create' && action.execution_mode === 'enabled' && opts.calendarWriter) {
+      action = await executeCalendarAction(pool, opts.calendarWriter, action.id, action.revision);
+      calendarCache = undefined;
+    }
+    res.json({ action });
+  });
+  app.post('/actions/:id/prepare', hub, async (req, res) => {
+    const { revision } = revisionBody.parse(req.body);
+    res.json({ action: await prepareCalendarAction(pool, idParam.parse(req.params.id), revision,
+      opts.actionCalendarId ?? '', !!opts.calendarWriter) });
+  });
+  for (const operation of ['execute','undo'] as const) app.post(`/actions/:id/${operation}`, hub, async (req, res) => {
+    if (!opts.calendarWriter) throw new ConflictError('Connect calendar write access first.');
+    const { revision } = revisionBody.parse(req.body);
+    const action = await executeCalendarAction(pool, opts.calendarWriter, idParam.parse(req.params.id), revision, operation === 'undo');
+    calendarCache = undefined;
     res.json({ action });
   });
 
@@ -224,14 +244,14 @@ export function createApp(opts: AppOptions) {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
     if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
-    res.json(await listActions(pool, true, opts.actionCalendarId));
+    res.json(await listActions(pool, true, opts.actionCalendarId, !!opts.calendarWriter));
   });
 
   app.post('/runs/:id/actions', async (req, res) => {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
     if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
-    const action = await proposeAction(pool, id, proposalInput.parse(req.body), opts.actionCalendarId);
+    const action = await proposeAction(pool, id, proposalInput.parse(req.body), opts.actionCalendarId, !!opts.calendarWriter);
     res.status(201).json({ action });
   });
 

@@ -24,6 +24,8 @@ export interface RunSummary {
 }
 
 export interface CalendarEvent {
+  id?: string;
+  calendarId?: string;
   calendar: string;
   title: string;
   start: string;
@@ -87,8 +89,15 @@ export interface ActionProposal {
   source_snapshot: { subject?: string; sender?: string; evidence?: string; deadline_text?: string; thread_id?: string; missing_details?: string[] };
   blocked_reasons: string[];
   can_approve: boolean;
+  can_prepare?: boolean;
+  can_execute?: boolean;
+  can_undo?: boolean;
+  calendar_event_id?: string | null;
+  calendar_target_id?: string | null;
+  execution_error?: string | null;
+  executed_at?: string | null;
 }
-export interface ActionsData { items: ActionProposal[]; total: number; pending: number; }
+export interface ActionsData { items: ActionProposal[]; total: number; pending: number; calendar_write_ready?: boolean; target_calendar?: string | null; }
 
 export class AgentApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -97,7 +106,8 @@ export class AgentApiError extends Error {
 export interface AgentsClient {
   actions(): Promise<ActionsData>;
   actionDetail(id: number): Promise<{ action: ActionProposal; events: { id: number; revision: number; event_type: string; actor: string; created_at: string }[] }>;
-  decideAction(id: number, decision: 'approved' | 'rejected', revision: number): Promise<void>;
+  decideAction(id: number, decision: 'approved' | 'rejected', revision: number): Promise<ActionProposal | void>;
+  calendarAction?(id: number, operation: 'prepare' | 'execute' | 'undo', revision: number): Promise<ActionProposal>;
   findings(): Promise<FindingsData>;
   setFindingStatus(id: number, status: EmailFinding['status']): Promise<void>;
   calendar(): Promise<CalendarData>;
@@ -115,7 +125,7 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(path === '/calendar' ? 30_000 : 5000),
+      signal: AbortSignal.timeout(path.startsWith('/actions/') && method === 'POST' ? 60_000 : path === '/calendar' ? 30_000 : 5000),
     });
     if (!res.ok) {
       const error = await res.json().catch(() => ({})) as { error?: string };
@@ -127,7 +137,8 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
   return {
     actions: () => call<ActionsData>('GET', '/actions'),
     actionDetail: (id) => call('GET', `/actions/${id}`),
-    decideAction: async (id, decision, revision) => { await call('POST', `/actions/${id}/decision`, { decision, revision }); },
+    decideAction: async (id, decision, revision) => (await call<{ action: ActionProposal }>('POST', `/actions/${id}/decision`, { decision, revision })).action,
+    calendarAction: async (id, operation, revision) => (await call<{ action: ActionProposal }>('POST', `/actions/${id}/${operation}`, { revision })).action,
     findings: () => call<FindingsData>('GET', '/findings'),
     setFindingStatus: async (id, status) => { await call('PATCH', `/findings/${id}`, { status }); },
     calendar: () => call<CalendarData>('GET', '/calendar'),

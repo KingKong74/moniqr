@@ -3,6 +3,7 @@ import pg from 'pg';
 import { createApp } from '../src/api/app.js';
 import { createPool, type Pool } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
+import type { CalendarWriter } from '../src/calendar-writer.js';
 
 export const API_TOKEN = 'test-api-token';
 export const RUNNER_TOKEN = 'test-runner-token';
@@ -36,8 +37,8 @@ export async function freshDatabase(): Promise<{ pool: Pool; drop: () => Promise
   };
 }
 
-export async function startApp(pool: Pool, staleRunMs = 60_000, actionCalendarId?: string) {
-  const app = createApp({ pool, apiToken: API_TOKEN, runnerToken: RUNNER_TOKEN, staleRunMs, actionCalendarId });
+export async function startApp(pool: Pool, staleRunMs = 60_000, actionCalendarId?: string, calendarWriter?: CalendarWriter) {
+  const app = createApp({ pool, apiToken: API_TOKEN, runnerToken: RUNNER_TOKEN, staleRunMs, actionCalendarId, calendarWriter });
   const server = app.listen(0);
   await new Promise((r) => server.once('listening', r));
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
