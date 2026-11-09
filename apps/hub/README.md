@@ -6,7 +6,7 @@ It is a thin client of the agent API. The Express server sends a page shell, `pu
 
 ## Real and sample data
 
-The latest brief, recent runs, *Run EA now*, project links, admin inbox findings and Google Calendar events are real. The calendar reads the current Brisbane week from the selected main calendar through the agent API and refreshes once per minute. The EA can still read the other connected calendars for briefs. Configure the Google read credentials as described in the root README; the calendar shows a disconnected or unavailable message when it cannot load. Calendar writing requires a separate API-only connection.
+The latest brief, recent runs, *Run EA now*, project links, admin inbox findings and Google Calendar events are real. The calendar preserves the current Brisbane week across the connected Google calendars through the agent API and refreshes once per minute. Approved Moniqr additions go to the selected main calendar. Configure the Google read credentials as described in the root README; the calendar shows a disconnected or unavailable message when it cannot load. Calendar writing requires a separate API-only connection.
 
 The Admin inbox replaces sample messages and approval controls with source-linked email findings. **Scan email** starts an EA morning-brief run. Review/dismiss/new decisions persist through the agent API and survive reloads and re-scans. The inbox shows the latest scan's completion state and the last successful scan separately, and retains findings when a scan fails. Lists are capped at 200 with new findings first; the UI reports when more exist.
 

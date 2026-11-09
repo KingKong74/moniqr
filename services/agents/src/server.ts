@@ -21,7 +21,7 @@ if (applied.length) console.log(`[migrate] applied ${applied.join(', ')}`);
 
 const app = createApp({
   pool,
-  calendar: reader ? { listEvents: (start, end) => reader.listEvents(start, end, target) } : null,
+  calendar: reader,
   actionCalendarId: process.env.GOOGLE_WRITE_CALENDAR_ID,
   calendarWriter: writer,
   apiToken: config.apiToken,
