@@ -1,5 +1,9 @@
 # Working on the moniqr repo
 
+## Delivery
+
+Follow [AGENTS.md](AGENTS.md): completed changes must be committed, pushed and merged into `main` by default, with remote delivery verified before reporting completion. Do not leave finished work only locally unless Bailey explicitly asks.
+
 ## Conventions
 
 - en-AU spelling everywhere, in code comments, docs and UI copy.

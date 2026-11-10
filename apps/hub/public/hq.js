@@ -5,6 +5,7 @@
 // manual/record-only choices never execute. Chat, priorities, mood and habits are samples.
 import { Component, html, render } from '/vendor/preact-htm.js';
 import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
+import { projectSamples, financeSamples } from './dashboard-mocks.js';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -48,6 +49,7 @@ class App extends Component {
     posting: false,
     now: Date.now(),
     view: 'hq',
+    projectFilter: 'All',
     collapsed: window.matchMedia('(max-width: 760px)').matches,
     slide: 0,
     carPaused: false,
@@ -265,7 +267,7 @@ class App extends Component {
           ${this.renderTopbar(v)}
           <div class="body">
             <div class="content">
-              ${this.state.view === 'hq' ? this.renderHq(v) : this.renderBriefing(v)}
+              ${this.state.view === 'hq' ? this.renderHq(v) : this.state.view === 'projects' ? this.renderProjectDashboard() : this.state.view === 'finance' ? this.renderFinanceDashboard() : this.renderBriefing(v)}
               ${!this.state.collapsed && this.renderAssistant(v)}
             </div>
             ${this.state.collapsed &&
@@ -342,13 +344,11 @@ class App extends Component {
   }
 
   renderNav(v) {
-    const { data } = this.state;
-    const link = (name) => data.links.find((l) => l.name === name)?.url;
     const items = [
-      { label: 'HQ', on: true, go: () => this.openView('hq') },
+      { label: 'HQ', view: 'hq', go: () => this.openView('hq') },
       { label: 'Inbox', badge: v.unread || '', go: () => { this.openView('hq'); this.later(() => document.getElementById('inbox')?.scrollIntoView({ behavior: 'smooth' }), 0); } },
-      { label: 'Projects', href: link('Stack') },
-      { label: 'Finance', href: link('Finance') },
+      { label: 'Projects', view: 'projects', go: () => this.openView('projects') },
+      { label: 'Finance', view: 'finance', go: () => this.openView('finance') },
       { label: 'Knowledge' },
       { label: 'Agents' },
       { label: 'Life' },
@@ -367,10 +367,10 @@ class App extends Component {
           ${items.map((n) =>
             n.href
               ? html`<a class="nav-item" href=${n.href}><span class="grow">${n.label}</span></a>`
-              : html`<div class=${`nav-item${n.on && this.state.view === 'hq' ? ' on' : ''}${n.go ? '' : ' soon'}`} onClick=${n.go} title=${n.go ? null : 'Not built yet'}>
+              : html`<button type="button" class=${`nav-item${n.view === this.state.view ? ' on' : ''}${n.go ? '' : ' soon'}`} onClick=${n.go} disabled=${!n.go} aria-current=${n.view === this.state.view ? 'page' : null} title=${n.go ? null : 'Not built yet'}>
                   <span class="grow">${n.label}</span>
                   ${n.badge ? html`<span class="badge">${n.badge}</span>` : null}
-                </div>`,
+                </button>`,
           )}
         </div>
         <div class="col workforce" style="gap: 8px; padding: 0 10px;">
@@ -404,7 +404,7 @@ class App extends Component {
     return html`
       <header class="topbar">
         <div class="row crumb fs13 muted nowrap" style="gap: 6px;">
-          <span class="text">HQ</span><span>/</span><span>${this.state.view === 'hq' ? 'Command centre' : 'Daily briefing'}</span>
+          <span class="text">HQ</span><span>/</span><span>${({ hq: 'Command centre', projects: 'Projects', finance: 'Finance', briefing: 'Daily briefing' })[this.state.view]}</span>
         </div>
         <div style="flex: 1; display: flex; justify-content: center;">
           <form class="search" onSubmit=${onSearch}>
@@ -1306,6 +1306,62 @@ class App extends Component {
         )}
       </section>
     `;
+  }
+
+  dashboardHeader(title, description, app) {
+    const url = this.state.data.links.find((l) => l.name === app)?.url;
+    return html`<header class="dashboard-heading between wrap">
+      <div class="col" style="gap: 8px;"><span class="fs12 steel">HEADQUARTERS / ${title.toUpperCase()}</span><h1>${title}</h1><p class="muted">${description}</p></div>
+      <a class="btn btn-secondary" href=${url}>Open ${app} ↗</a>
+    </header><div class="dashboard-notice"><span class="sample">Design preview</span><span>Sample data · ${app} is not connected to this dashboard yet.</span></div>`;
+  }
+
+  dashboardMetric(label, value, note) {
+    return html`<section class="tile panel dashboard-metric"><span class="fs13 muted">${label}</span><strong>${value}</strong><span class="fs12 dim">${note}</span></section>`;
+  }
+
+  renderProjectDashboard() {
+    const filter = this.state.projectFilter;
+    const projects = projectSamples.filter((p) => filter === 'All' || (filter === 'Needs attention' ? !!p.attention : p.status === filter));
+    const stack = this.state.data.links.find((l) => l.name === 'Stack')?.url;
+    return html`<main class="main dashboard">
+      ${this.dashboardHeader('Projects', 'Pick up your work, clear blockers and keep the next step in sight.', 'Stack')}
+      <div class="dashboard-metrics">
+        ${this.dashboardMetric('Projects in motion', '3', 'Across your workspace')}
+        ${this.dashboardMetric('Needs attention', '2', '1 blocked · 1 awaiting review')}
+        ${this.dashboardMetric('Live projects', '1', 'Stack is up and running')}
+        ${this.dashboardMetric('Latest checkpoint', '2h ago', 'Moniqr · dashboard mockups')}
+      </div>
+      <div class="dashboard-columns">
+        <section class="tile panel dashboard-resume"><span class="fs12 steel">PICK UP WHERE YOU LEFT OFF</span><h2>Moniqr</h2><p class="soft">Projects and Finance, right here in HQ.</p><p class="muted">The navigation is in place. Next up: review the overview cards and decide what to surface from each app.</p><div class="dashboard-next"><span class="fs12 muted">NEXT STEP</span><p>Finish the Projects and Finance overview</p></div><a class="btn btn-primary" style="align-self: flex-start;" href=${stack}>Continue in Stack ↗</a></section>
+        <section class="tile panel"><div class="between"><h2 class="card-title">Needs your attention</h2><span class="badge">2</span></div><div class="dashboard-list-row col"><span class="coral fs12">BLOCKED · FINANCE</span><span>Confirm the categorisation approach</span><p class="fs13 muted">Choose the rules before the next import pass.</p></div><div class="dashboard-list-row col"><span class="steel fs12">REVIEW · MONIQR</span><span>Review the HQ dashboard layouts</span><p class="fs13 muted">Check the content hierarchy for both tabs.</p></div></section>
+      </div>
+      <section class="col" style="gap: 16px;"><div class="between wrap"><h2>Your projects</h2><div class="row wrap" aria-label="Filter projects">${['All', 'Building', 'Live', 'Needs attention'].map((f) => html`<button class=${`btn sm ${filter === f ? 'btn-primary' : 'btn-secondary'}`} aria-pressed=${filter === f} onClick=${() => this.setState({ projectFilter: f })}>${f}</button>`)}</div></div>
+        <div class="dashboard-projects">${projects.map((p) => html`<article class="tile panel"><div class="between"><span class="fs12 muted">${p.category}</span><span class=${`dashboard-status ${p.attention === 'Blocked' ? 'coral' : 'steel'}`}>${p.status}</span></div><h3>${p.name}</h3><p class="fs13 muted">${p.note}</p><div class="between fs12"><span class="dim">Delivery progress</span><span>${p.progress}%</span></div><div class="bar"><div style=${`width: ${p.progress}%`}></div></div><div class="dashboard-next"><span class="fs12 muted">NEXT STEP</span><p class="fs14">${p.next}</p></div>${p.attention && html`<span class="fs12 coral">${p.attention}</span>`}</article>`)}</div>
+      </section>
+      <section class="tile panel"><div class="between"><h2 class="card-title">Recent activity</h2><span class="fs12 muted">Across Stack</span></div>${projectSamples.map((p) => html`<div class="dashboard-list-row between wrap"><div><span class="steel">${p.name}</span><p class="fs13 soft">${p.activity}</p></div><span class="fs12 muted">${p.when}</span></div>`)}</section>
+    </main>`;
+  }
+
+  renderFinanceDashboard() {
+    const f = financeSamples;
+    const money = (n) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(n);
+    const finance = this.state.data.links.find((l) => l.name === 'Finance')?.url;
+    return html`<main class="main dashboard">
+      ${this.dashboardHeader('Finance', 'Your money at a glance. Budgets, cash flow and what needs a look.', 'Finance')}
+      <div class="between wrap"><span class="fs13 dim">Personal overview · November 2026 · AUD</span><span class="fs12 muted">Illustrative month</span></div>
+      <div class="dashboard-metrics">
+        ${this.dashboardMetric('Cash balance', money(f.balance), 'Across everyday & savings')}
+        ${this.dashboardMetric('Income this month', money(f.income), '2 salary payments')}
+        ${this.dashboardMetric('Spent this month', money(f.spent), '68% of monthly budget')}
+        ${this.dashboardMetric('Budget remaining', money(f.budget - f.spent), 'Of a $4,200 spending plan')}
+      </div>
+      <div class="dashboard-columns"><section class="tile panel dashboard-resume"><span class="fs12 steel">MONTHLY POSITION</span><h2>${money(f.income - f.spent)} ahead</h2><p class="muted">Income less spending in this sample month.</p><div class="dashboard-cash-row"><span>Income</span><meter min="0" max=${f.income} value=${f.income} aria-label="Monthly income"></meter><strong>${money(f.income)}</strong></div><div class="dashboard-cash-row"><span>Spending</span><meter min="0" max=${f.income} value=${f.spent} aria-label="Monthly spending"></meter><strong>${money(f.spent)}</strong></div><div class="dashboard-next"><span class="fs12 muted">COMING UP</span><p>${money(f.bills.reduce((sum, b) => sum + b.amount, 0))} in upcoming bills</p><span class="fs13 muted">Keep room in your everyday account for the next payments.</span></div></section>
+      <section class="tile panel"><div class="between"><h2 class="card-title">Budget breakdown</h2><span class="fs12 muted">Spent / planned</span></div>${f.categories.map((c) => html`<div class="col" style="gap: 7px;"><div class="between fs13"><span>${c.name}</span><span class="muted">${money(c.spent)} / ${money(c.budget)}</span></div><meter class="dashboard-budget" min="0" max=${c.budget} value=${c.spent} aria-label=${`${c.name} budget used`}></meter></div>`)}</section></div>
+      <div class="dashboard-columns"><section class="tile panel"><div class="between"><h2 class="card-title">Recent transactions</h2><span class="fs12 muted">Sample ledger</span></div>${f.transactions.map((t) => html`<div class="dashboard-list-row between"><div class="col"><span>${t.name}</span><span class=${`fs12 ${t.category === 'To categorise' ? 'coral' : 'muted'}`}>${t.date} · ${t.category}</span></div><strong class=${t.amount > 0 ? 'steel' : 'soft'}>${t.amount > 0 ? '+' : '−'}${Math.abs(t.amount).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}</strong></div>`)}</section>
+      <section class="tile panel"><h2 class="card-title">Upcoming bills</h2>${f.bills.map((b) => html`<div class="dashboard-list-row between"><div class="col"><span>${b.name}</span><span class="fs12 muted">Due ${b.due}</span></div><strong>${money(b.amount)}</strong></div>`)}<span class="fs12 muted">Planned payments · no payments scheduled by HQ</span></section></div>
+      <section class="tile panel"><div class="between wrap"><div class="col" style="gap: 6px;"><h2 class="card-title">A little housekeeping</h2><p class="muted">1 sample transaction needs a category. Review your ledger, budgets and personal or business reports in Finance.</p></div><a class="btn btn-secondary" href=${finance}>Review in Finance ↗</a></div></section>
+    </main>`;
   }
 
   renderBriefing(v) {
