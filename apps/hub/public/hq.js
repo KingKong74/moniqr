@@ -50,7 +50,7 @@ class App extends Component {
     now: Date.now(),
     view: 'hq',
     projectFilter: 'All',
-    collapsed: window.matchMedia('(max-width: 760px)').matches,
+    chatOpen: false,
     slide: 0,
     carPaused: false,
     ap: {},
@@ -83,11 +83,15 @@ class App extends Component {
   cardRefs = Object.fromEntries(FOCUS_IDS.map((id) => [id, (el) => (this.cardEls[id] = el)]));
   gridRef = (el) => (this.gridEl = el);
   searchRef = (el) => (this.searchEl = el);
+  chatInputRef = (el) => (this.chatInputEl = el);
+  chatButtonRef = (el) => (this.chatButtonEl = el);
+  chatMessagesRef = (el) => (this.chatMessagesEl = el);
 
   componentDidMount() {
     this.load();
     this.clock = setInterval(() => this.setState({ now: Date.now() }), 30_000);
     this.onKey = (e) => {
+      if (e.key === 'Escape' && this.state.chatOpen) this.setState({ chatOpen: false });
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         this.searchEl?.focus();
@@ -206,6 +210,13 @@ class App extends Component {
   }
 
   componentDidUpdate(_props, prev) {
+    if (prev.chatOpen !== this.state.chatOpen) {
+      if (this.state.chatOpen) this.chatInputEl?.focus();
+      else this.chatButtonEl?.focus();
+    }
+    if (this.state.chatOpen && (!prev.chatOpen || prev.messages !== this.state.messages || prev.thinking !== this.state.thinking)) {
+      this.chatMessagesEl?.scrollTo({ top: this.chatMessagesEl.scrollHeight });
+    }
     if (prev.view !== this.state.view && this.state.view === 'hq') this.startBar();
     if (!this.flip) return;
     const { snap, gridH } = this.flip;
@@ -241,7 +252,7 @@ class App extends Component {
   send(text) {
     if (!text.trim()) return;
     const { chat } = this.state.data.mock;
-    this.setState((s) => ({ messages: [...s.messages, { me: true, text }], draft: '', thinking: true, collapsed: false }));
+    this.setState((s) => ({ messages: [...s.messages, { me: true, text }], draft: '', thinking: true, chatOpen: true }));
     const t = text.toLowerCase();
     const reply = chat.replies.find((r) => r.match.some((m) => t.includes(m)))?.text ?? chat.fallback;
     this.later(() => this.setState((s) => ({ thinking: false, messages: [...s.messages, { me: false, text: reply }] })), 1400);
@@ -268,17 +279,16 @@ class App extends Component {
           <div class="body">
             <div class="content">
               ${this.state.view === 'hq' ? this.renderHq(v) : this.state.view === 'projects' ? this.renderProjectDashboard() : this.state.view === 'finance' ? this.renderFinanceDashboard() : this.renderBriefing(v)}
-              ${!this.state.collapsed && this.renderAssistant(v)}
             </div>
-            ${this.state.collapsed &&
-            html`<aside class="rail" title="Open Moniqr" onClick=${() => this.setState({ collapsed: false })}>
-              <span class="m-mark">M</span>
-              <span class="fs14 muted">←</span>
-              <span class="v">Moniqr</span>
-              ${v.pending > 0 && html`<span class="badge">${v.pending}</span>`}
-            </aside>`}
           </div>
         </div>
+        ${this.state.chatOpen && this.renderAssistant(v)}
+        <button type="button" class="chat-launcher" ref=${this.chatButtonRef}
+          aria-label=${this.state.chatOpen ? 'Close Moniqr chat' : 'Open Moniqr chat'}
+          aria-expanded=${this.state.chatOpen} aria-controls="moniqr-chat"
+          onClick=${() => this.setState((s) => ({ chatOpen: !s.chatOpen }))}>
+          <span class="m-mark" aria-hidden="true">M</span><span>${this.state.chatOpen ? 'Close chat' : 'Chat'}</span>
+        </button>
       </div>
     `;
   }
@@ -1433,36 +1443,35 @@ class App extends Component {
   }
 
   renderAssistant(v) {
-    const { data, thinking } = this.state;
-    const status = thinking ? 'drafting…' : data.busy ? 'running the EA…' : `coordinating ${v.workforce.length} agents`;
+    const { thinking } = this.state;
     const submit = (e) => {
       e.preventDefault();
       this.send(this.state.draft);
     };
     return html`
-      <aside class="assistant">
+      <section id="moniqr-chat" class="assistant" role="dialog" aria-modal="false" aria-labelledby="moniqr-chat-title">
         <div class="row" style="gap: 10px; padding: 16px 18px;">
           <span class="m-mark">M</span>
           <div class="col grow">
-            <span class="fs15 bright" style="font-weight: 500;">Moniqr</span>
-            <span class="fs12 muted">Executive Assistant · ${status}</span>
+            <span id="moniqr-chat-title" class="fs15 bright" style="font-weight: 500;">Moniqr</span>
+            <span class="fs12 muted">Sample chat · ${thinking ? 'drafting…' : 'preview'}</span>
           </div>
-          <span class="icon-btn" title="Collapse panel" onClick=${() => this.setState({ collapsed: true })}>→</span>
+          <button type="button" class="btn sm btn-ghost" aria-label="Close chat" onClick=${() => this.setState({ chatOpen: false })}>Close</button>
         </div>
-        <div class="msgs">
+        <div class="msgs" role="log" aria-label="Chat messages" aria-live="polite" ref=${this.chatMessagesRef}>
           ${this.state.messages.map((m) => html`<div class=${`bubble ${m.me ? 'me' : 'them'}`}>${m.text}</div>`)}
           ${thinking && html`<span class="fs13 muted">Moniqr is drafting…</span>`}
         </div>
         <div class="col" style="gap: 10px; padding: 14px 18px 18px;">
           <div class="row wrap" style="gap: 6px;">
-            ${v.mock.chat.suggestions.map((s) => html`<span class="chip" style="border-radius: 14px; padding: 5px 12px;" onClick=${() => this.send(s)}>${s}</span>`)}
+            ${v.mock.chat.suggestions.map((s) => html`<button type="button" class="btn sm btn-secondary" onClick=${() => this.send(s)}>${s}</button>`)}
           </div>
           <form class="composer" style="padding: 5px; border-radius: 12px;" onSubmit=${submit}>
-            <input class="field" style="font-size: 14px;" value=${this.state.draft} onInput=${(e) => this.setState({ draft: e.target.value })} placeholder="Delegate, ask, or plan…" />
+            <input ref=${this.chatInputRef} aria-label="Message Moniqr" class="field" style="font-size: 16px;" value=${this.state.draft} onInput=${(e) => this.setState({ draft: e.target.value })} placeholder="Delegate, ask, or plan…" />
             <button type="submit" class="btn btn-primary" style="border-radius: 8px; padding: 6px 14px;">Send</button>
           </form>
         </div>
-      </aside>
+      </section>
     `;
   }
 }

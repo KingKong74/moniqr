@@ -18,7 +18,7 @@ Action review shows real persisted proposals, source evidence, missing details, 
 
 The calendar shows the owner-selected main calendar with a separate toggleable Moniqr request overlay. Clicking an overlay opens its proposal details. Undated/ambiguous requests stay in Action review. Requests span the full day column with a translucent background; confirmed events retain their normal layout beneath them. A successful write invalidates the calendar cache, and provider IDs prevent a request appearing twice when the real event arrives. Undo is limited to unchanged, tagged Moniqr-created events. See the root README for the separate calendar write connection; reads and overlays still work without it.
 
-Lifestyle cards, the carousel and chat still come from `src/mock.ts`, and the page labels sample content. Priorities, mood, habits and chat only change page state and reset on reload. Nothing on the page books, buys or sends anything.
+Lifestyle cards, the carousel and chat still come from `src/mock.ts`, and the page labels sample content. Chat opens from a small bottom-right button as a floating window; it starts closed and can be dismissed with Close, the launcher or Escape. Priorities, mood, habits and sample chat only change page state and reset on reload. Nothing on the page books, buys or sends anything.
 
 ## Login
 
