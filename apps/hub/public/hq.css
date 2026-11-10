@@ -67,6 +67,9 @@ input::placeholder { color: var(--n500); }
 .bar { height: 4px; border-radius: 2px; background: var(--wash-8); overflow: hidden; }
 .bar > div { height: 100%; border-radius: 2px; background: var(--accent); }
 .sample { font-size: 11px; padding: 2px 8px; border-radius: 9px; border: 1px dashed var(--n600); color: var(--n400); white-space: nowrap; cursor: help; }
+.signout { margin: 0; }
+.signout-btn { cursor: pointer; font-family: inherit; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--divider); background: transparent; color: var(--n400); white-space: nowrap; }
+.signout-btn:hover { color: var(--n100); background: var(--wash-6); }
 
 /* — buttons and fields — */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; font: inherit; font-weight: 500; font-size: 14px; line-height: 1.2; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--divider); background: transparent; color: var(--n200); }

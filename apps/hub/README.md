@@ -1,6 +1,6 @@
 # Hub
 
-HQ, the homepage at the root of moniqr.com, built from the *Personal OS – HQ v4* design: brief carousel, today's key decision, priorities, news, mood, inbox with approvals, week calendar, habits, food, people, markets, projects and the Moniqr chat panel. All Moniqr-related apps live on subdomains (the budgeting app at finance.moniqr.com) behind the same login.
+HQ, the homepage at the root of moniqr.com, built from the *Personal OS – HQ v4* design: brief carousel, today's key decision, priorities, news, mood, inbox with approvals, week calendar, habits, food, people, markets, projects and the Moniqr chat panel. All Moniqr-related apps live on subdomains (the budgeting app at finance.moniqr.com) behind their own login (Cloudflare Access for now).
 
 It is a thin client of the agent API. The Express server sends a page shell, `public/hq.js` and `public/hq.css`, and `/api/hq` with everything the page draws. The page is Preact + htm, served as one ES module from `node_modules` (`/vendor/preact-htm.js`), so there's no client build step. The agent API token stays on the server.
 
@@ -18,7 +18,13 @@ Lifestyle cards, the carousel and chat still come from `src/mock.ts`, and the pa
 
 ## Login
 
-Cloudflare Access sits in front of moniqr.com and its subdomains and only lets in the emails in its policy. Traefik can also be reached directly, so the hub checks the `Cf-Access-Jwt-Assertion` token on every request too: signature, team, AUD tag and an email in `HUB_ALLOWED_EMAILS`. `/health` is the only open route. Run requests, finding decisions and action decisions accept only posts whose `Origin` is the hub itself. Scripts load only from the hub; the one third party is Google Fonts for Barlow.
+moniqr.com has its own sign-in page at `/login`: **Continue with Google** (OpenID Connect authorisation code flow with PKCE, state and nonce), asking Google only for `openid email`. The ID token's signature, issuer, client ID and nonce are checked, and the email must be verified and listed in `HUB_ALLOWED_EMAILS`. The hub then sets a 30-day `__Host-moniqr_session` cookie (HttpOnly, Secure, SameSite=Lax), signed with `HUB_SESSION_SECRET`. Every request re-checks the allow list, so removing an email locks it out, and rotating the secret signs everyone out. **Sign out** in the top bar clears the cookie.
+
+Pages opened without a session redirect to `/login` and return to the same page after sign-in. Data requests get a 401, and HQ reloads to the login page. `/health`, `/login`, `/login.css` and the Google callback are the only open routes. Run requests, finding and action decisions, and sign-out accept only posts whose `Origin` is the hub itself. Scripts load only from the hub, the login page has no script, and the one third party is Google Fonts for Barlow.
+
+Cloudflare Access no longer covers moniqr.com or www. It still protects the other subdomains, such as finance.moniqr.com, which don't use this login.
+
+Google setup: in the Google Cloud project, create an OAuth client of type *Web application* with the authorised redirect URI `https://moniqr.com/login/google/callback`, then set `HUB_GOOGLE_CLIENT_ID` and `HUB_GOOGLE_CLIENT_SECRET` on the hub.
 
 ## Local development
 
@@ -26,4 +32,4 @@ Cloudflare Access sits in front of moniqr.com and its subdomains and only lets i
 AGENTS_API_URL=http://localhost:8080 API_TOKEN=... HUB_DEV_EMAIL=you@example.com npm run dev -w apps/hub   # :3000
 ```
 
-`HUB_DEV_EMAIL` skips Cloudflare Access and is refused when `NODE_ENV=production`. Set `HUB_ORIGIN=http://localhost:3000` too if you want *Run EA now* to work locally.
+`HUB_DEV_EMAIL` skips sign-in and is refused when `NODE_ENV=production`. Set `HUB_ORIGIN=http://localhost:3000` too if you want *Run EA now* to work locally.

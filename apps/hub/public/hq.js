@@ -110,6 +110,8 @@ class App extends Component {
     const seq = this.loadSeq = (this.loadSeq ?? 0) + 1;
     try {
       const res = await fetch('/api/hq', { headers: { accept: 'application/json' } });
+      // Session expired or signed out in another tab: back to the login page, then here.
+      if (res.status === 401) return void location.assign('/login');
       if (!res.ok) throw new Error(`HQ data returned ${res.status}`);
       const data = await res.json();
       if (seq !== this.loadSeq) return;
@@ -412,6 +414,9 @@ class App extends Component {
         </div>
         <span class="sample" title="The brief, calendar, email findings, proposal decisions, EA runs and links are live. Lifestyle cards and chat are samples.">Some sample cards</span>
         <span class="clock fs13 muted nowrap">${clock}</span>
+        <form method="post" action="/logout" class="signout">
+          <button type="submit" class="signout-btn fs12" title=${`Signed in as ${this.state.data?.email ?? ''}`}>Sign out</button>
+        </form>
       </header>
     `;
   }

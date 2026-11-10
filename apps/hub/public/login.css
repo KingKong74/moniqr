@@ -1,0 +1,63 @@
+/* The moniqr sign-in page, on HQ's Graphite + Coastal palette. */
+:root {
+  --n100: #f5f5f8; --n200: #e7e7ea; --n300: #d4d4d7; --n400: #b7b7ba; --n500: #98989b; --n900: #2b2b2d;
+  --accent: #3d5a80; --steel: #98c1d9; --coral: #ee6c4d;
+  --bg: color-mix(in srgb, var(--n900) 82%, black);
+  --card: color-mix(in srgb, var(--n900) 92%, white);
+  --line: color-mix(in srgb, var(--n100) 10%, transparent);
+  --font: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font-family: var(--font); font-size: 15px; line-height: 1.5; color: var(--n200);
+  background:
+    radial-gradient(1100px 600px at 50% -10%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+
+.shell { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 32px 16px; }
+
+.card {
+  width: 100%; max-width: 400px; padding: 40px 36px 32px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+  box-shadow: 0 1px 0 color-mix(in srgb, white 6%, transparent) inset, 0 24px 60px -24px rgb(0 0 0 / 0.65);
+}
+
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
+.mark { width: 34px; height: 34px; flex: none; }
+.wordmark { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--n100); }
+
+h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; letter-spacing: -0.015em; color: var(--n100); }
+.lede { margin: 0 0 28px; color: var(--n400); text-wrap: pretty; }
+
+.notice { margin: 0 0 20px; padding: 10px 12px; border-radius: 10px; font-size: 14px; border: 1px solid; }
+.notice-error { color: #ffd2c6; background: color-mix(in srgb, var(--coral) 12%, transparent); border-color: color-mix(in srgb, var(--coral) 40%, transparent); }
+.notice-info { color: var(--n200); background: color-mix(in srgb, var(--steel) 9%, transparent); border-color: color-mix(in srgb, var(--steel) 28%, transparent); }
+
+.google {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  width: 100%; height: 48px; padding: 0 16px; border-radius: 12px;
+  background: #fff; color: #1f1f1f; border: 1px solid #fff;
+  font: 500 15px/1 var(--font); text-decoration: none;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.google svg { width: 20px; height: 20px; flex: none; }
+.google:hover { background: #f1f3f4; box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.6); }
+.google:active { transform: translateY(1px); }
+.google:focus-visible { outline: 2px solid var(--steel); outline-offset: 3px; }
+
+.fine { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--n500); text-wrap: pretty; }
+.foot { font-size: 12px; color: var(--n500); }
+
+@media (max-width: 420px) {
+  .card { padding: 32px 22px 26px; border-radius: 16px; }
+  h1 { font-size: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .google { transition: none; }
+}

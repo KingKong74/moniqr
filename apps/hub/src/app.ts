@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { AccessDenied, type Identify } from './access.js';
 import { AgentApiError, RUN_KINDS, type AgentsClient, type RunKind } from './agents.js';
+import { LOGIN_MINUTES, newPendingLogin, SESSION_DAYS, SignInError, type GoogleSignIn, type Sessions } from './auth.js';
+import { isLoginMessage, renderLogin } from './login.js';
 import { hqData, renderPage } from './page.js';
 
 // The page's own script and styles. They sit beside src/ and dist/, so this works for both.
@@ -9,9 +10,28 @@ const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 // Preact, its hooks and htm in one ES module, so the browser needs no build step or import map.
 const PREACT = fileURLToPath(import.meta.resolve('htm/preact/standalone'));
 
+/** Google sign-in with session cookies, or local development signed in as one email. */
+export type HubAuth =
+  | { mode: 'google'; google: GoogleSignIn; sessions: Sessions }
+  | { mode: 'dev'; email: string };
+
+/** A same-site path to return to after signing in, or '/'. Refuses anything that could leave the hub. */
+export function safeNext(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 512 || !/^\/(?![/\\])/.test(value) || /[\u0000-\u001f\\]/.test(value)) return '/';
+  return value.startsWith('/login') || value.startsWith('/logout') ? '/' : value;
+}
+
+function readCookie(req: Request, name: string): string | undefined {
+  for (const part of (req.header('cookie') ?? '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return undefined;
+}
+
 export interface HubOptions {
   agents: AgentsClient;
-  identify: Identify;
+  auth: HubAuth;
   /** Canonical origin, e.g. https://moniqr.com. www redirects here and POSTs must come from it. */
   origin: string;
 }
@@ -52,14 +72,71 @@ export function createApp(opts: HubOptions) {
     next();
   });
 
-  app.use(async (req: Request, res: Response, next: NextFunction) => {
+  // Cookie names. __Host- pins a cookie to this exact host over HTTPS; plain names keep local http dev working.
+  const secure = canonical.protocol === 'https:';
+  const SESSION = secure ? '__Host-moniqr_session' : 'moniqr_session';
+  const LOGIN = secure ? '__Host-moniqr_login' : 'moniqr_login';
+  const cookieOpts = { httpOnly: true, secure, sameSite: 'lax' as const, path: '/' };
+  const auth = opts.auth;
+  const identify = async (req: Request) =>
+    auth.mode === 'dev' ? auth.email : auth.sessions.read(readCookie(req, SESSION));
+
+  app.get('/login.css', (_req, res) => {
+    res.sendFile('login.css', { root: PUBLIC_DIR });
+  });
+
+  app.get('/login', async (req, res) => {
+    const next = safeNext(req.query.next);
+    if (await identify(req)) return void res.redirect(303, next);
+    const message = isLoginMessage(req.query.error) ? req.query.error : req.query.signed_out !== undefined ? 'signed-out' : undefined;
+    res.type('html').send(renderLogin({ message, next }));
+  });
+
+  app.get('/login/google', async (req, res) => {
+    if (auth.mode === 'dev') return void res.redirect(303, '/');
+    const login = newPendingLogin(safeNext(req.query.next));
+    res.cookie(LOGIN, await auth.sessions.sealLogin(login), { ...cookieOpts, maxAge: LOGIN_MINUTES * 60_000 });
+    res.redirect(303, auth.google.authUrl(login));
+  });
+
+  app.get('/login/google/callback', async (req, res) => {
+    if (auth.mode === 'dev') return void res.redirect(303, '/');
+    const fail = (reason: string) => res.clearCookie(LOGIN, cookieOpts).redirect(303, `/login?error=${reason}`);
+    const login = await auth.sessions.openLogin(readCookie(req, LOGIN));
+    if (!login || typeof req.query.state !== 'string' || req.query.state !== login.state) return void fail('expired');
+    if (req.query.error === 'access_denied') return void fail('cancelled');
+    if (typeof req.query.code !== 'string' || !req.query.code) return void fail('failed');
     try {
-      res.locals.email = await opts.identify(req.header('cf-access-jwt-assertion'));
-      next();
+      const email = await auth.google.finish(req.query.code, login);
+      res.clearCookie(LOGIN, cookieOpts);
+      res.cookie(SESSION, await auth.sessions.issue(email), { ...cookieOpts, maxAge: SESSION_DAYS * 86_400_000 });
+      console.log(`[hub] signed in ${email}`);
+      res.redirect(303, login.next);
     } catch (err) {
-      if (!(err instanceof AccessDenied)) return next(err);
-      res.status(403).type('text/plain').send('Forbidden. Sign in through https://moniqr.com.\n');
+      if (!(err instanceof SignInError)) throw err;
+      console.warn(`[hub] sign-in refused: ${err.message}`);
+      fail(err.reason);
     }
+  });
+
+  app.post('/logout', (req, res) => {
+    // Same Origin check as every other post, so another site can't sign you out.
+    if (req.header('origin') !== canonical.origin) return void res.status(403).type('text/plain').send('Cross-site request refused.\n');
+    res.clearCookie(SESSION, cookieOpts).redirect(303, '/login?signed_out');
+  });
+
+  app.use(async (req: Request, res: Response, next: NextFunction) => {
+    const email = await identify(req);
+    if (email) {
+      res.locals.email = email;
+      return next();
+    }
+    // A person opening a page goes to the login page; the page's own requests get a 401 to act on.
+    if (req.method === 'GET' && !req.path.startsWith('/api/') && req.accepts(['html', 'json']) === 'html') {
+      const back = safeNext(req.originalUrl);
+      return void res.redirect(302, back === '/' ? '/login' : `/login?next=${encodeURIComponent(back)}`);
+    }
+    res.status(401).json({ error: 'Sign in at /login.' });
   });
 
   app.use(express.static(PUBLIC_DIR, { index: false }));

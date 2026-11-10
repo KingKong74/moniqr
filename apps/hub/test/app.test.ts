@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
-import { AccessDenied } from '../src/access.js';
 import { AgentApiError, type AgentsClient, type RunKind } from '../src/agents.js';
 import { createApp } from '../src/app.js';
+import { sessions, SignInError, type GoogleSignIn, type PendingLogin } from '../src/auth.js';
 import { formatWhen } from '../src/page.js';
 
 const ORIGIN = 'https://moniqr.com';
@@ -52,26 +52,36 @@ const agents: AgentsClient = {
 
 let base: string;
 let close: () => void;
+const SECRET = 'test-secret-that-is-at-least-32-characters';
+const store = sessions(SECRET, ['bailey@example.com']);
+// Google stand-in: the code "good" signs in Bailey, "stranger" an account that isn't allowed.
+const finished: PendingLogin[] = [];
+const google: GoogleSignIn = {
+  authUrl: (login) => `https://accounts.google.com/o/oauth2/v2/auth?state=${login.state}`,
+  finish: async (code, login) => {
+    finished.push(login);
+    if (code === 'good') return 'bailey@example.com';
+    throw new SignInError(code === 'stranger' ? 'denied' : 'failed', 'nope');
+  },
+};
+let authed: Record<string, string>;
 
 before(async () => {
   const app = createApp({
     agents,
     origin: ORIGIN,
-    identify: async (token) => {
-      if (token !== 'good') throw new AccessDenied('nope');
-      return 'bailey@example.com';
-    },
+    auth: { mode: 'google', google, sessions: store },
   });
   const server = app.listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   close = () => server.close();
+  authed = { cookie: `__Host-moniqr_session=${await store.issue('bailey@example.com')}` };
 });
 after(() => close());
 
 const get = (path: string, headers: Record<string, string> = {}) =>
   fetch(base + path, { headers, redirect: 'manual' });
-const authed = { 'cf-access-jwt-assertion': 'good' };
 
 test('health needs no login', async () => {
   assert.equal((await get('/health')).status, 200);
@@ -91,13 +101,100 @@ test('www redirects to the apex, keeping the path', async () => {
   assert.equal(res.location, 'https://moniqr.com/runs?x=1');
 });
 
-test('everything else needs a valid Access token', async () => {
-  assert.equal((await get('/')).status, 403);
-  assert.equal((await get('/', { 'cf-access-jwt-assertion': 'bad' })).status, 403);
-  assert.equal((await get('/hq.css')).status, 403);
-  assert.equal((await get('/hq.js')).status, 403);
-  assert.equal((await get('/api/hq')).status, 403);
-  assert.equal((await get('/findings/1/status')).status, 403);
+test('everything else needs a session: pages send you to the login page, data requests get a 401', async () => {
+  const html = { accept: 'text/html' };
+  const home = await get('/', html);
+  assert.equal(home.status, 302);
+  assert.equal(home.headers.get('location'), '/login');
+  assert.equal((await get('/runs?x=1', html)).headers.get('location'), '/login?next=%2Fruns%3Fx%3D1');
+  assert.equal((await get('/', { ...html, cookie: '__Host-moniqr_session=forged' })).status, 302);
+  const other = await sessions('another-secret-that-is-at-least-32-chars', ['bailey@example.com']).issue('bailey@example.com');
+  assert.equal((await get('/', { ...html, cookie: `__Host-moniqr_session=${other}` })).status, 302);
+  const stranger = await sessions(SECRET, ['someone@example.com']).issue('someone@example.com');
+  assert.equal((await get('/', { ...html, cookie: `__Host-moniqr_session=${stranger}` })).status, 302);
+  // A login cookie is signed with the same secret but can't be used as a session.
+  const login = await store.sealLogin({ state: 's', nonce: 'n', verifier: 'v', next: '/' });
+  assert.equal((await get('/', { ...html, cookie: `__Host-moniqr_session=${login}` })).status, 302);
+  assert.equal((await get('/hq.js', { accept: 'application/json' })).status, 401);
+  assert.equal((await get('/api/hq', html)).status, 401);
+  assert.equal((await get('/api/hq')).status, 401);
+});
+
+test('the login page is public, has no script and links to Google sign-in', async () => {
+  const res = await get('/login?next=%2Fruns&error=denied');
+  assert.equal(res.status, 200);
+  const page = await res.text();
+  assert.ok(!page.includes('<script'));
+  assert.ok(page.includes('href="/login/google?next=%2Fruns"'));
+  assert.match(page, /doesn’t have access/);
+  assert.equal((await get('/login.css')).status, 200);
+  assert.equal((await get('/login?error=<b>')).status, 200);
+  assert.ok(!(await (await get('/login?error=<b>')).text()).includes('<b>'));
+  // Already signed in: straight back to where you were going.
+  const again = await get('/login?next=%2Fruns', authed);
+  assert.equal(again.status, 303);
+  assert.equal(again.headers.get('location'), '/runs');
+});
+
+const loginCookie = (res: Response) => {
+  const set = res.headers.getSetCookie().find((c) => c.startsWith('__Host-moniqr_login='));
+  assert.ok(set, 'login cookie set');
+  assert.match(set, /HttpOnly/);
+  assert.match(set, /Secure/);
+  assert.match(set, /SameSite=Lax/);
+  return set.split(';')[0];
+};
+
+test('Google sign-in round trip sets a session and returns to the page you asked for', async () => {
+  const start = await get('/login/google?next=%2Fruns%3Fx%3D1');
+  assert.equal(start.status, 303);
+  const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+  const cookie = loginCookie(start);
+
+  const back = await get(`/login/google/callback?code=good&state=${state}`, { cookie });
+  assert.equal(back.status, 303);
+  assert.equal(back.headers.get('location'), '/runs?x=1');
+  assert.equal(finished.at(-1)?.next, '/runs?x=1');
+  const session = back.headers.getSetCookie().find((c) => c.startsWith('__Host-moniqr_session='))!;
+  assert.match(session, /HttpOnly/);
+  assert.match(session, /Max-Age=2592000/);
+  assert.equal((await get('/', { cookie: session.split(';')[0] })).status, 200);
+});
+
+test('Google sign-in refuses a wrong state, a missing login cookie, strangers and cancellations', async () => {
+  const start = await get('/login/google');
+  const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+  const cookie = loginCookie(start);
+  const where = async (path: string, headers: Record<string, string> = { cookie }) => {
+    const res = await get(path, headers);
+    assert.equal(res.status, 303);
+    assert.ok(!res.headers.getSetCookie().some((c) => c.startsWith('__Host-moniqr_session=') && !c.includes('Expires=Thu, 01 Jan 1970')));
+    return res.headers.get('location');
+  };
+  assert.equal(await where(`/login/google/callback?code=good&state=other`), '/login?error=expired');
+  assert.equal(await where(`/login/google/callback?code=good&state=${state}`, {}), '/login?error=expired');
+  assert.equal(await where(`/login/google/callback?code=stranger&state=${state}`), '/login?error=denied');
+  assert.equal(await where(`/login/google/callback?code=broken&state=${state}`), '/login?error=failed');
+  assert.equal(await where(`/login/google/callback?error=access_denied&state=${state}`), '/login?error=cancelled');
+});
+
+test('the return path after sign-in stays on the hub', async () => {
+  for (const next of ['https://evil.example/', '//evil.example', '/\\evil.example', '/login/google', 'runs']) {
+    const res = await get(`/login/google?next=${encodeURIComponent(next)}`);
+    const state = new URL(res.headers.get('location')!).searchParams.get('state')!;
+    const back = await get(`/login/google/callback?code=good&state=${state}`, { cookie: loginCookie(res) });
+    assert.equal(back.headers.get('location'), '/', next);
+  }
+});
+
+test('sign out clears the session and only accepts same-site posts', async () => {
+  const out = (headers: Record<string, string>) => fetch(base + '/logout', { method: 'POST', headers, redirect: 'manual' });
+  assert.equal((await out({ ...authed, origin: 'https://evil.example' })).status, 403);
+  const res = await out({ ...authed, origin: ORIGIN });
+  assert.equal(res.status, 303);
+  assert.equal(res.headers.get('location'), '/login?signed_out');
+  assert.ok(res.headers.getSetCookie().some((c) => c.startsWith('__Host-moniqr_session=;')));
+  assert.match(await (await get('/login?signed_out')).text(), /signed out/);
 });
 
 test('the page shell loads its script and styles from the hub only', async () => {
@@ -176,7 +273,7 @@ test('run now refuses cross-site posts and unknown kinds', async () => {
   assert.equal((await post('kind=test', { ...authed, origin: 'https://evil.example' })).status, 403);
   assert.equal((await post('kind=test', authed)).status, 403);
   assert.equal((await post('kind=delete_everything', { ...authed, origin: ORIGIN })).status, 400);
-  assert.equal((await post('kind=test', { origin: ORIGIN })).status, 403);
+  assert.equal((await post('kind=test', { origin: ORIGIN })).status, 401);
   assert.deepEqual(queued, []);
 });
 
@@ -190,7 +287,7 @@ test('action decisions authenticate, enforce same origin, validate revision and 
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body,
   });
   const body = 'decision=approved&revision=1';
-  assert.equal((await decide(body, { origin: ORIGIN })).status, 403);
+  assert.equal((await decide(body, { origin: ORIGIN })).status, 401);
   assert.equal((await decide(body, authed)).status, 403);
   assert.equal((await decide(body, { ...authed, origin: 'https://evil.example' })).status, 403);
   assert.equal((await decide('decision=approved', { ...authed, origin: ORIGIN })).status, 400);
@@ -203,7 +300,7 @@ test('action decisions authenticate, enforce same origin, validate revision and 
     assert.equal(r.status, 409);
     assert.match((await r.json()).error, /proposal changed/);
   } finally { staleAction = false; }
-  assert.equal((await get('/api/actions/1')).status, 403);
+  assert.equal((await get('/api/actions/1')).status, 401);
   assert.equal((await get('/api/actions/bad', authed)).status, 400);
   assert.equal((await get('/api/actions/1', authed)).status, 404);
 });
@@ -213,7 +310,7 @@ test('finding decisions require sign-in, same origin and a supported status', as
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers },
     body: new URLSearchParams({ status }),
   });
-  assert.equal((await decide('1', 'reviewed', { origin: ORIGIN })).status, 403);
+  assert.equal((await decide('1', 'reviewed', { origin: ORIGIN })).status, 401);
   assert.equal((await decide('1', 'reviewed', authed)).status, 403);
   assert.equal((await decide('1', 'reviewed', { ...authed, origin: 'https://evil.example' })).status, 403);
   assert.equal((await decide('bad', 'reviewed', { ...authed, origin: ORIGIN })).status, 400);
@@ -227,7 +324,7 @@ test('calendar prepare, retry and undo require owner authentication, origin and 
     const send = (body: string, headers: Record<string,string>) => fetch(`${base}/actions/1/${operation}`, {
       method:'POST', headers:{'content-type':'application/x-www-form-urlencoded',...headers},body,
     });
-    assert.equal((await send('revision=1',{origin:ORIGIN})).status,403);
+    assert.equal((await send('revision=1',{origin:ORIGIN})).status,401);
     assert.equal((await send('revision=1',authed)).status,403);
     assert.equal((await send('revision=1',{...authed,origin:'https://evil.example'})).status,403);
     assert.equal((await send('revision=bad',{...authed,origin:ORIGIN})).status,400);
