@@ -6,6 +6,10 @@ It is a thin client of the agent API. The Express server sends a page shell, `pu
 
 ## Real and sample data
 
+The Projects and Finance sidebar buttons open dashboards inside HQ. Projects shows sample resume context, attention items, filterable project cards and recent activity inspired by Stack. Finance shows sample balances, cash flow, budgets, transactions and bills. Both dashboards are labelled as design previews; they do not fetch live Stack or Finance data. Explicit **Open Stack** and **Open Finance** links lead to the full apps.
+
+When checking a live UI change, verify the running hub's assets after deployment. A successful push to `main` does not establish that Dokploy rebuilt the hub. The Google sign-in version requires the `HUB_GOOGLE_CLIENT_ID`, `HUB_GOOGLE_CLIENT_SECRET` and `HUB_SESSION_SECRET` settings before deployment; a hub still using Cloudflare Access must retain its existing authentication until that configuration is ready.
+
 The latest brief, recent runs, *Run EA now*, project links, admin inbox findings and Google Calendar events are real. The calendar preserves the current Brisbane week across the connected Google calendars through the agent API and refreshes once per minute. Approved Moniqr additions go to the selected main calendar. Configure the Google read credentials as described in the root README; the calendar shows a disconnected or unavailable message when it cannot load. Calendar writing requires a separate API-only connection.
 
 The Admin inbox replaces sample messages and approval controls with source-linked email findings. **Scan email** starts an EA morning-brief run. Review/dismiss/new decisions persist through the agent API and survive reloads and re-scans. The inbox shows the latest scan's completion state and the last successful scan separately, and retains findings when a scan fails. Lists are capped at 200 with new findings first; the UI reports when more exist.
