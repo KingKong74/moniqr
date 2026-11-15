@@ -1,6 +1,6 @@
 # Hub
 
-The moniqr web app at the root of moniqr.com. It opens on **Home**, the landing page from the *Moniqr design system* project in Claude Design (`Landing Page.dc.html`), with **HQ**, Projects and Finance a tab away in the top bar.
+The moniqr web app at the root of moniqr.com. It opens on **Home**, the landing page from the *Moniqr design system* project in Claude Design (`Landing Page.dc.html`), with **HQ**, **Inbox**, Projects and Finance a tab away in the top bar.
 
 ## Home and themes
 
@@ -12,7 +12,7 @@ Signed out, `/login` is Home in the design's locked state (`public/locked.js`): 
 
 ## HQ
 
-HQ, the command centre, built from the *Personal OS – HQ v4* design: brief carousel, today's key decision, priorities, news, mood, inbox with approvals, week calendar, habits, food, people, markets, projects and the Moniqr chat panel. All Moniqr-related apps live on subdomains (the budgeting app at finance.moniqr.com) behind their own login (Cloudflare Access for now).
+HQ, the command centre, built from the *Personal OS – HQ v4* design: brief carousel, today's key decision, priorities, news, mood, action review, week calendar, habits, food, people, markets, projects and the Moniqr chat panel. All Moniqr-related apps live on subdomains (the budgeting app at finance.moniqr.com) behind their own login (Cloudflare Access for now).
 
 It is a thin client of the agent API. The Express server sends a page shell, `public/hq.js` and `public/hq.css`, and `/api/hq` with everything the page draws. The page is Preact + htm, served as one ES module from `node_modules` (`/vendor/preact-htm.js`), so there's no client build step. The agent API token stays on the server.
 
@@ -24,7 +24,7 @@ When checking a live UI change, verify the running hub's assets after deployment
 
 The latest brief, recent runs, *Run EA now*, project links, admin inbox findings and Google Calendar events are real. The calendar preserves the current Brisbane week across the connected Google calendars through the agent API and refreshes once per minute. Approved Moniqr additions go to the selected main calendar. Configure the Google read credentials as described in the root README; the calendar shows a disconnected or unavailable message when it cannot load. Calendar writing requires a separate API-only connection.
 
-The Admin inbox replaces sample messages and approval controls with source-linked email findings. **Scan email** starts an EA morning-brief run. Review/dismiss/new decisions persist through the agent API and survive reloads and re-scans. The inbox shows the latest scan's completion state and the last successful scan separately, and retains findings when a scan fails. Lists are capped at 200 with new findings first; the UI reports when more exist.
+The Admin inbox has its own **Inbox** tab (top bar, sidebar and Home's *Open inbox*). It replaces sample messages and approval controls with source-linked email findings. **Scan email** starts an EA morning-brief run. Review/dismiss/new decisions persist through the agent API and survive reloads and re-scans. The inbox shows the latest scan's completion state and the last successful scan separately, and retains findings when a scan fails. Lists are capped at 200 with new findings first; the UI reports when more exist.
 
 Action review shows real persisted proposals, source evidence, missing details, expiry and decision history. Requests include the displayed revision, so a changed proposal requires another review. Manual/record-only decisions never execute. When Google writing is connected, a calendar proposal labelled **Creates an event after approval** creates one event after owner approval. Old record-only choices require explicit preparation and a fresh review. The UI shows confirmed, failed, uncertain and undone outcomes, with owner-only retry/check/undo controls. Findings and action decisions remain separate.
 
