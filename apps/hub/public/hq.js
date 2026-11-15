@@ -279,7 +279,7 @@ class App extends Component {
     const after = () => anchor && document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' });
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (view === from || reduced) return void swap().then(after);
-    // The new page's sections rise in one after another (hq.css, .arriving), under a diagonal wipe.
+    // The new page's sections rise in one after another (hq.css, .arriving), under a circular reveal.
     // The class goes on only once the old page has been captured, so the old snapshot stays intact.
     const arrive = () => {
       clearTimeout(this.arriving);
@@ -288,7 +288,9 @@ class App extends Component {
       return swap();
     };
     if (!document.startViewTransition) return void arrive().then(after);
-    document.startViewTransition(arrive).finished.finally(after);
+    // Back to Home the page collapses into the corner; anywhere else the new page expands out of it.
+    root.classList.toggle('collapsing', view === 'home');
+    document.startViewTransition(arrive).finished.finally(() => { root.classList.remove('collapsing'); after(); });
   };
 
   toggleTheme = () => {
