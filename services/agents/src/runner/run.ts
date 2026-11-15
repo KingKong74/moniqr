@@ -46,8 +46,7 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
     'No calendar, email or finance tools are connected yet, so do not invent any commitments, bills or figures. ' +
     'Say plainly which sections are waiting on which data source.';
   const notYet =
-    'The finance sheet is not connected yet, so do not invent balances or cashflow figures; ' +
-    'say so in one line at the end of the brief.';
+    'The finance sheet is not connected yet, so do not invent balances or cashflow figures.';
   const findings = ' After reading each relevant email, call save_email_finding for a bill/deadline, commitment or reply needed. ' +
     'Use one finding per message/category, quote the source body as evidence and preserve exact deadline wording. ' +
     'Do not invent dates, amounts or details hidden in attachments; list missing details instead. ' +
@@ -57,9 +56,14 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
     'Never infer an ambiguous calendar date or duration; leave unknown start/end null and list missing_details. ' +
     'Proposals are suggestions for review, never executed actions. Do not re-propose dismissed findings or rejected actions. ' +
     'Finish the email searches, save findings and proposals before calling write_brief. Mention any failed or partial searches in the brief.';
-  const approvals = ' Call list_action_proposals and include pending decisions that matter, noting any missing details. ' +
-    'A saved proposal or approval is not evidence of execution. Only an explicit succeeded execution state or an actual calendar read confirms creation. ' +
-    'Manual and record-only decisions do not execute; never claim that messages were sent, bills paid or bookings made.';
+  const approvals = ' Call get_daily_admin for open findings, pending decisions and recent outcomes, and use it to cover deadlines ' +
+    'and decisions that matter, noting missing details. Keep three kinds of item apart: confirmed (in the calendar you read, ' +
+    'or an outcome with confirmed_created true), proposed (a pending decision waiting on Bailey) and mentioned (an email finding only). ' +
+    'Report a created event only when confirmed_created is true; report failed or uncertain outcomes as such. ' +
+    'A bill is unpaid only when the email says so; otherwise say it is due or mentioned and that payment status is unknown. ' +
+    'Never state balances or the contents of attachments. Manual and record-only decisions do not execute; never claim that ' +
+    'messages were sent, bills paid or bookings made. If a tool fails, say which source was unavailable rather than leaving it out. ' +
+    'moniqr adds its own sources section to the brief.';
   switch (claimed.run.kind) {
     case 'morning_brief':
       if (!sources.google) return `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ${noData}${approvals}`;
@@ -92,7 +96,7 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
 
 /** The MCP tools a run may call. Google tools only when Google is connected. */
 export function allowedTools(sources: Sources): string[] {
-  const tools = ['mcp__agents__write_brief', 'mcp__agents__list_action_proposals'];
+  const tools = ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals'];
   if (sources.google) {
     tools.push(
       'mcp__agents__list_calendars',

@@ -10,6 +10,7 @@ import { gmail, MAX_SEARCH_RESULTS } from '../gmail.js';
 import { googleCalendar, googleCredentialsFromEnv } from '../google.js';
 import { EmailObservations, findingToolInput } from './findings.js';
 import { proposalInput, proposalShape } from '../actions.js';
+import { SourceLedger, sourcesFooter, withFooter } from './sources.js';
 
 const apiUrl = process.env.AGENTS_API_URL;
 const runId = process.env.RUN_ID;
@@ -34,6 +35,7 @@ const post = (path: string, body: unknown) => apiRequest('POST', path, body);
 const server = new McpServer({ name: 'agents', version: '0.1.0' });
 const observations = new EmailObservations();
 const savedFindingIds = new Set<number>();
+const ledger = new SourceLedger();
 const saveScan = async (final = false) => {
   const response = await post(`/runs/${runId}/email-scan`, observations.scan(final));
   if (!response.ok) throw new Error(`Email scan state could not be saved (${response.status}).`);
@@ -45,7 +47,21 @@ server.registerTool('list_action_proposals', {
   inputSchema: {},
 }, async () => {
   const r = await apiRequest('GET', `/runs/${runId}/actions`);
+  ledger.record(ledger.admin, r.ok);
   if (!r.ok) return { isError: true, content: [{ type: 'text', text: `Proposals unavailable (${r.status}).` }] };
+  return { content: [{ type: 'text', text: JSON.stringify(r.data) }] };
+});
+
+server.registerTool('get_daily_admin', {
+  title: 'Get daily admin context',
+  description: 'Read what moniqr already knows for the brief: open email findings with source links, pending decisions, ' +
+    'outcomes of the last 7 days and when email was last scanned. Statuses come from moniqr, not from email. ' +
+    'Only confirmed_created means an event was created. Bills show whether payment is known. Read-only.',
+  inputSchema: {},
+}, async () => {
+  const r = await apiRequest('GET', `/runs/${runId}/admin-context`).catch(() => ({ ok: false, status: 0, data: {} }));
+  ledger.record(ledger.admin, r.ok);
+  if (!r.ok) return { isError: true, content: [{ type: 'text', text: `Daily admin context unavailable (${r.status}). Say so in the brief.` }] };
   return { content: [{ type: 'text', text: JSON.stringify(r.data) }] };
 });
 
@@ -55,7 +71,8 @@ server.registerTool(
     title: 'Write brief',
     description:
       "Save this run's brief for Bailey. Call exactly once per run. body_md is the full brief in Markdown; " +
-      'summary is at most three short lines and becomes a phone notification.',
+      'summary is at most three short lines and becomes a phone notification. ' +
+      'moniqr appends its own "Sources checked" section, so do not write one.',
     inputSchema: {
       body_md: z.string().min(1).max(20_000).describe('The full brief, in Markdown'),
       summary: z.string().min(1).max(300).describe('Up to three short lines for a push notification'),
@@ -67,7 +84,8 @@ server.registerTool(
       try { await saveScan(true); }
       catch (err) { return { isError: true, content: [{ type: 'text', text: String(err) }] }; }
     }
-    const res = await post(`/runs/${runId}/brief`, { body_md, summary });
+    const email = google ? observations.scan(true) : null;
+    const res = await post(`/runs/${runId}/brief`, { body_md: withFooter(body_md, sourcesFooter(ledger, Boolean(google), email)), summary });
     if (!res.ok) {
       return {
         isError: true,
@@ -122,8 +140,10 @@ if (google) {
       const end = new Date(start.getTime() + days * 86_400_000);
       try {
         const events = await calendar.listEvents(start, end);
+        ledger.record(ledger.calendar, true);
         return { content: [{ type: 'text', text: JSON.stringify({ note: UNTRUSTED, events }) }] };
       } catch (err) {
+        ledger.record(ledger.calendar, false);
         return failed(err);
       }
     },

@@ -24,6 +24,7 @@ const client = new Client({ name: 'fake-codex', version: '0.0.0' });
 await client.connect(new StdioClientTransport({ command: server.command, args: server.args, env: server.env }));
 const tools = (await client.listTools()).tools.map((t) => t.name);
 const proposals = await client.callTool({ name: 'list_action_proposals', arguments: {} });
+const admin = await client.callTool({ name: 'get_daily_admin', arguments: {} });
 const invented = tools.includes('propose_action') ? await client.callTool({ name: 'propose_action', arguments: {
   finding_id: 999999, kind: 'manual', title: 'Invented', detail: 'Invented', instructions: 'Do something',
 } }) : null;
@@ -40,6 +41,7 @@ await client.close();
 const result = JSON.stringify({
   args, cwd: process.cwd(), envKeys: Object.keys(process.env).sort(), tools,
   proposals: { isError: proposals.isError ?? false, text: proposals.content[0].text },
+  admin: { isError: admin.isError ?? false, text: admin.content[0].text },
   invented: invented ? { isError: invented.isError, text: invented.content[0].text } : null,
   first: call.content[0].text,
   second: { isError: second.isError, text: second.content[0].text },
