@@ -206,9 +206,21 @@ test('the page shell loads its script and styles from the hub only', async () =>
   const html = await res.text();
   assert.ok(html.includes('src="/hq.js"'));
   assert.ok(html.includes('bailey@example.com'));
-  for (const path of ['/hq.js', '/hq.css', '/vendor/preact-htm.js']) {
+  assert.match(csp, /img-src 'self'(;|$)/);
+  for (const path of ['/hq.js', '/hq.css', '/home.js', '/energy-orb.js', '/vendor/preact-htm.js']) {
     assert.equal((await get(path, authed)).status, 200, path);
   }
+});
+
+test('the brand icons load without a session, for the login page, but nothing else does', async () => {
+  for (const path of ['/assets/moniqr-icon-dark.png', '/assets/moniqr-icon-light.png']) {
+    const res = await get(path);
+    assert.equal(res.status, 200, path);
+    assert.equal(res.headers.get('content-type'), 'image/png');
+  }
+  assert.equal((await get('/home.js', { accept: 'application/json' })).status, 401);
+  const login = await (await get('/login')).text();
+  assert.ok(login.includes('/assets/moniqr-icon-light.png'));
 });
 
 test('HQ data carries the brief as escaped HTML, the runs and the placeholder content', async () => {
@@ -226,6 +238,7 @@ test('HQ data carries the brief as escaped HTML, the runs and the placeholder co
   assert.ok(data.brief.html.includes('<h3>Hello</h3>'));
   assert.ok(data.brief.html.includes('&lt;b&gt;first&lt;/b&gt;'));
   assert.equal(data.brief.when, 'Tue 27 Oct, 6:30am');
+  assert.equal(data.brief.at, '2026-10-26T20:30:00Z', 'Home places the brief on today by its timestamp');
   assert.equal(data.runs[0].kind, 'Plumbing test');
   assert.equal(data.busy, false);
   assert.deepEqual(data.mock.mail, [], 'sample emails must not masquerade as findings');

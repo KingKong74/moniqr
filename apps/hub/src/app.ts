@@ -47,6 +47,7 @@ export function createApp(opts: HubOptions) {
         "default-src 'none'",
         "script-src 'self'",
         "style-src 'self' https://fonts.googleapis.com",
+        "img-src 'self'",
         'font-src https://fonts.gstatic.com',
         "connect-src 'self'",
         "form-action 'self'",
@@ -83,6 +84,11 @@ export function createApp(opts: HubOptions) {
 
   app.get('/login.css', (_req, res) => {
     res.sendFile('login.css', { root: PUBLIC_DIR });
+  });
+
+  // The brand icons are on the login page too, so they're open like its stylesheet.
+  app.get(['/assets/moniqr-icon-dark.png', '/assets/moniqr-icon-light.png'], (req, res) => {
+    res.sendFile(req.path.slice(1), { root: PUBLIC_DIR });
   });
 
   app.get('/login', async (req, res) => {

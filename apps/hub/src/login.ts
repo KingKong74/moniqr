@@ -22,6 +22,7 @@ export function renderLogin(opts: { message?: keyof typeof MESSAGES; next?: stri
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light dark">
   <title>Sign in · moniqr</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -32,11 +33,8 @@ export function renderLogin(opts: { message?: keyof typeof MESSAGES; next?: stri
   <main class="shell">
     <section class="card" aria-labelledby="title">
       <div class="brand">
-        <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
-          <rect width="40" height="40" rx="11" fill="#3d5a80"/>
-          <path d="M11 28V17.5a3.5 3.5 0 0 1 7 0V28M18 17.5a3.5 3.5 0 0 1 7 0V28" fill="none" stroke="#e0fbfc" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="30" cy="25.5" r="2.5" fill="#ee6c4d"/>
-        </svg>
+        <img class="mark mark-light" src="/assets/moniqr-icon-light.png" width="34" height="34" alt="">
+        <img class="mark mark-dark" src="/assets/moniqr-icon-dark.png" width="34" height="34" alt="">
         <span class="wordmark">moniqr</span>
       </div>
       <h1 id="title">Sign in</h1>

@@ -56,6 +56,7 @@ export function hqData(d: HqInput) {
     brief: d.brief && {
       kind: kindLabel(d.brief.kind),
       when: formatWhen(d.brief.created_at),
+      at: d.brief.created_at,
       summary: d.brief.summary,
       html: renderMarkdown(d.brief.body_md),
     },
@@ -82,15 +83,16 @@ export function renderPage(email: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>moniqr · HQ</title>
+  <title>moniqr</title>
+  <link rel="icon" type="image/png" href="/assets/moniqr-icon-dark.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/hq.css">
   <script type="module" src="/hq.js"></script>
 </head>
 <body>
-  <div id="app"><p class="boot">Loading HQ for ${esc(email)}…</p></div>
+  <div id="app"><p class="boot">Loading moniqr for ${esc(email)}…</p></div>
   <noscript><p class="boot">HQ needs JavaScript.</p></noscript>
 </body>
 </html>`;

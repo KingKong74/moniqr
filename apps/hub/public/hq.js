@@ -1,4 +1,4 @@
-// HQ, the moniqr.com homepage. A port of the Personal OS HQ v4 design to Preact + htm, loaded as
+// HQ, the moniqr.com command centre, behind Home (home.js). A port of the Personal OS HQ v4 design to Preact + htm, loaded as
 // one ES module so there's no build step. The server sends everything to draw from /api/hq:
 // live briefs, runs, calendar, findings and proposal decisions, plus sample lifestyle content
 // (data.mock). Enabled calendar proposals create events only after owner approval;
@@ -6,6 +6,18 @@
 import { Component, html, render } from '/vendor/preact-htm.js';
 import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
 import { projectSamples, financeSamples } from './dashboard-mocks.js';
+import { Home, icon } from './home.js';
+
+// Light or dark, remembered per browser; the device setting decides until Bailey picks one.
+const THEME_KEY = 'moniqr-theme';
+function initialTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch {}
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+document.documentElement.dataset.theme = initialTheme();
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -48,7 +60,8 @@ class App extends Component {
     loadError: false,
     posting: false,
     now: Date.now(),
-    view: 'hq',
+    view: 'home',
+    theme: document.documentElement.dataset.theme,
     projectFilter: 'All',
     chatOpen: false,
     slide: 0,
@@ -263,6 +276,20 @@ class App extends Component {
     window.scrollTo(0, 0);
   }
 
+  /** Open a view, optionally scrolled to a section and with a proposal selected. */
+  go = (view, anchor, actionId) => {
+    this.setState({ view, ...(actionId ? { actionSel: actionId, actionFilter: 'all', actionHistory: null } : {}) });
+    window.scrollTo(0, 0);
+    if (anchor) this.later(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' }), 0);
+  };
+
+  toggleTheme = () => {
+    const theme = this.state.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem(THEME_KEY, theme); } catch {}
+    this.setState({ theme });
+  };
+
   // — render —
 
   render() {
@@ -271,6 +298,18 @@ class App extends Component {
       return html`<p class="boot">${loadError ? 'HQ could not load. Refresh to try again.' : 'Loading HQ…'}</p>`;
     }
     const v = this.derive();
+    const chat = html`
+        ${this.state.chatOpen && this.renderAssistant(v)}
+        <button type="button" class="chat-launcher" ref=${this.chatButtonRef}
+          aria-label=${this.state.chatOpen ? 'Close Moniqr chat' : 'Open Moniqr chat'}
+          aria-expanded=${this.state.chatOpen} aria-controls="moniqr-chat"
+          onClick=${() => this.setState((s) => ({ chatOpen: !s.chatOpen }))}>
+          <span class="m-mark" aria-hidden="true">M</span><span>${this.state.chatOpen ? 'Close chat' : 'Chat'}</span>
+        </button>`;
+    if (this.state.view === 'home') {
+      return html`<${Home} data=${data} now=${this.state.now} name=${v.mock.name} theme=${this.state.theme}
+        pending=${v.pending} unread=${v.unread} onTheme=${this.toggleTheme} go=${this.go} />${chat}`;
+    }
     return html`
       <div class="shell">
         ${this.renderNav(v)}
@@ -282,13 +321,7 @@ class App extends Component {
             </div>
           </div>
         </div>
-        ${this.state.chatOpen && this.renderAssistant(v)}
-        <button type="button" class="chat-launcher" ref=${this.chatButtonRef}
-          aria-label=${this.state.chatOpen ? 'Close Moniqr chat' : 'Open Moniqr chat'}
-          aria-expanded=${this.state.chatOpen} aria-controls="moniqr-chat"
-          onClick=${() => this.setState((s) => ({ chatOpen: !s.chatOpen }))}>
-          <span class="m-mark" aria-hidden="true">M</span><span>${this.state.chatOpen ? 'Close chat' : 'Chat'}</span>
-        </button>
+        ${chat}
       </div>
     `;
   }
@@ -355,6 +388,7 @@ class App extends Component {
 
   renderNav(v) {
     const items = [
+      { label: 'Home', view: 'home', go: () => this.openView('home') },
       { label: 'HQ', view: 'hq', go: () => this.openView('hq') },
       { label: 'Inbox', badge: v.unread || '', go: () => { this.openView('hq'); this.later(() => document.getElementById('inbox')?.scrollIntoView({ behavior: 'smooth' }), 0); } },
       { label: 'Projects', view: 'projects', go: () => this.openView('projects') },
@@ -367,9 +401,9 @@ class App extends Component {
     return html`
       <nav class="nav">
         <div class="row" style="gap: 10px; padding: 0 8px;">
-          <span class="brand-mark">B</span>
+          <span class="brand-mark"><img class="ic-light" src="/assets/moniqr-icon-light.png" alt="" /><img class="ic-dark" src="/assets/moniqr-icon-dark.png" alt="" /></span>
           <div class="col brand-text">
-            <span class="bright fs15" style="font-weight: 500;">Headquarters</span>
+            <span class="bright" style="font-size: 18px; font-weight: 600; letter-spacing: -0.015em;">moniqr</span>
             <span class="fs12 muted">${v.mock.name}’s personal OS</span>
           </div>
         </div>
@@ -413,9 +447,11 @@ class App extends Component {
     };
     return html`
       <header class="topbar">
-        <div class="row crumb fs13 muted nowrap" style="gap: 6px;">
-          <span class="text">HQ</span><span>/</span><span>${({ hq: 'Command centre', projects: 'Projects', finance: 'Finance', briefing: 'Daily briefing' })[this.state.view]}</span>
-        </div>
+        <nav class="tabs" aria-label="Sections">
+          ${[['home', 'Home'], ['hq', 'HQ'], ['projects', 'Projects'], ['finance', 'Finance']].map(([id, label]) => html`<button type="button"
+            class=${this.state.view === id || (id === 'hq' && this.state.view === 'briefing') ? 'on' : ''} aria-current=${this.state.view === id ? 'page' : null}
+            onClick=${() => this.openView(id)}>${label}</button>`)}
+        </nav>
         <div style="flex: 1; display: flex; justify-content: center;">
           <form class="search" onSubmit=${onSearch}>
             <input ref=${this.searchRef} name="q" placeholder="Ask Moniqr, search, or run a command" autocomplete="off" />
@@ -424,6 +460,8 @@ class App extends Component {
         </div>
         <span class="sample" title="The brief, calendar, email findings, proposal decisions, EA runs and links are live. Lifestyle cards and chat are samples.">Some sample cards</span>
         <span class="clock fs13 muted nowrap">${clock}</span>
+        <button type="button" class="theme-btn" onClick=${this.toggleTheme} aria-label=${this.state.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title=${this.state.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>${icon(this.state.theme === 'dark' ? 'sun' : 'moon')}</button>
         <form method="post" action="/logout" class="signout">
           <button type="submit" class="signout-btn fs12" title=${`Signed in as ${this.state.data?.email ?? ''}`}>Sign out</button>
         </form>

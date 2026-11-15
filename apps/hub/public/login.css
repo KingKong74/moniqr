@@ -1,20 +1,42 @@
-/* The moniqr sign-in page, on HQ's Graphite + Coastal palette. */
+/* The moniqr sign-in page, on the moniqr design system: cream and peach in light mode,
+   indigo night and violet in dark mode, following the device setting. */
 :root {
-  --n100: #f5f5f8; --n200: #e7e7ea; --n300: #d4d4d7; --n400: #b7b7ba; --n500: #98989b; --n900: #2b2b2d;
-  --accent: #3d5a80; --steel: #98c1d9; --coral: #ee6c4d;
-  --bg: color-mix(in srgb, var(--n900) 82%, black);
-  --card: color-mix(in srgb, var(--n900) 92%, white);
-  --line: color-mix(in srgb, var(--n100) 10%, transparent);
+  --bg: #faf6f0;
+  --glow: rgb(242 154 114 / 0.28);
+  --glow-2: rgb(227 51 140 / 0.12);
+  --card: #fffcf8;
+  --line: #ebe3d7;
+  --fg-1: #251f1b; --fg-2: #48413a; --fg-3: #625a51; --fg-4: #7e756b;
+  --focus: #f7b393;
+  --error-fg: #9c2d55; --error-bg: #f9e0e8; --error-line: rgb(194 65 110 / 0.35);
+  --info-bg: #fff4ee; --info-line: #fcd0b8;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 24px 60px -28px rgb(37 31 27 / 0.35);
   --font: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
-  color-scheme: dark;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e0f22;
+    --glow: rgb(108 99 255 / 0.32);
+    --glow-2: rgb(25 198 255 / 0.10);
+    --card: #16172f;
+    --line: rgb(238 238 250 / 0.10);
+    --fg-1: #eeeefa; --fg-2: #d6d5e8; --fg-3: #a6a5be; --fg-4: #7e7d98;
+    --focus: #8780ff;
+    --error-fg: #ffa3be; --error-bg: rgb(255 122 162 / 0.12); --error-line: rgb(255 122 162 / 0.38);
+    --info-bg: rgb(108 99 255 / 0.10); --info-line: rgb(108 99 255 / 0.38);
+    --shadow: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 24px 60px -24px rgb(0 0 0 / 0.65);
+    color-scheme: dark;
+  }
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body {
-  font-family: var(--font); font-size: 15px; line-height: 1.5; color: var(--n200);
+  font-family: var(--font); font-size: 15px; line-height: 1.5; color: var(--fg-2);
   background:
-    radial-gradient(1100px 600px at 50% -10%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%),
+    radial-gradient(900px 520px at 20% -10%, var(--glow), transparent 70%),
+    radial-gradient(900px 520px at 90% 110%, var(--glow-2), transparent 70%),
     var(--bg);
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
 }
@@ -24,34 +46,36 @@ body {
 .card {
   width: 100%; max-width: 400px; padding: 40px 36px 32px;
   background: var(--card); border: 1px solid var(--line); border-radius: 18px;
-  box-shadow: 0 1px 0 color-mix(in srgb, white 6%, transparent) inset, 0 24px 60px -24px rgb(0 0 0 / 0.65);
+  box-shadow: var(--shadow);
 }
 
 .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
-.mark { width: 34px; height: 34px; flex: none; }
-.wordmark { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--n100); }
+.mark { width: 34px; height: 34px; flex: none; display: block; }
+.mark-dark { display: none; }
+@media (prefers-color-scheme: dark) { .mark-light { display: none; } .mark-dark { display: block; } }
+.wordmark { font-size: 21px; font-weight: 600; letter-spacing: -0.015em; color: var(--fg-1); }
 
-h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; letter-spacing: -0.015em; color: var(--n100); }
-.lede { margin: 0 0 28px; color: var(--n400); text-wrap: pretty; }
+h1 { margin: 0 0 8px; font-size: 26px; font-weight: 500; letter-spacing: -0.02em; color: var(--fg-1); }
+.lede { margin: 0 0 28px; color: var(--fg-3); text-wrap: pretty; }
 
 .notice { margin: 0 0 20px; padding: 10px 12px; border-radius: 10px; font-size: 14px; border: 1px solid; }
-.notice-error { color: #ffd2c6; background: color-mix(in srgb, var(--coral) 12%, transparent); border-color: color-mix(in srgb, var(--coral) 40%, transparent); }
-.notice-info { color: var(--n200); background: color-mix(in srgb, var(--steel) 9%, transparent); border-color: color-mix(in srgb, var(--steel) 28%, transparent); }
+.notice-error { color: var(--error-fg); background: var(--error-bg); border-color: var(--error-line); }
+.notice-info { color: var(--fg-2); background: var(--info-bg); border-color: var(--info-line); }
 
 .google {
   display: flex; align-items: center; justify-content: center; gap: 12px;
-  width: 100%; height: 48px; padding: 0 16px; border-radius: 12px;
-  background: #fff; color: #1f1f1f; border: 1px solid #fff;
+  width: 100%; height: 48px; padding: 0 16px; border-radius: 999px;
+  background: #fff; color: #1f1f1f; border: 1px solid #dadce0;
   font: 500 15px/1 var(--font); text-decoration: none;
   transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .google svg { width: 20px; height: 20px; flex: none; }
-.google:hover { background: #f1f3f4; box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.6); }
+.google:hover { background: #f8f9fa; box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.45); }
 .google:active { transform: translateY(1px); }
-.google:focus-visible { outline: 2px solid var(--steel); outline-offset: 3px; }
+.google:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 
-.fine { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--n500); text-wrap: pretty; }
-.foot { font-size: 12px; color: var(--n500); }
+.fine { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--fg-4); text-wrap: pretty; }
+.foot { font-size: 12px; color: var(--fg-4); }
 
 @media (max-width: 420px) {
   .card { padding: 32px 22px 26px; border-radius: 16px; }
