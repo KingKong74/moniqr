@@ -14,13 +14,21 @@ export function hubConfig() {
   const login = () => {
     const sessionSecret = required('HUB_SESSION_SECRET');
     if (sessionSecret.length < 32) throw new Error('HUB_SESSION_SECRET must be at least 32 characters');
+    const allowedEmails = required('HUB_ALLOWED_EMAILS').split(',').map((e) => e.trim()).filter(Boolean);
+    if (!allowedEmails.length) throw new Error('HUB_ALLOWED_EMAILS has no emails');
+    const passcode = process.env.HUB_PASSCODE || undefined;
+    if (passcode && passcode.length < 6) throw new Error('HUB_PASSCODE must be at least 6 characters');
+    const clientId = process.env.HUB_GOOGLE_CLIENT_ID, clientSecret = process.env.HUB_GOOGLE_CLIENT_SECRET;
+    if (!!clientId !== !!clientSecret) throw new Error('Set both HUB_GOOGLE_CLIENT_ID and HUB_GOOGLE_CLIENT_SECRET, or neither');
+    if (!passcode && !clientId) throw new Error('Set HUB_PASSCODE or the HUB_GOOGLE_* sign-in, or both');
     return {
-      mode: 'google' as const,
-      clientId: required('HUB_GOOGLE_CLIENT_ID'),
-      clientSecret: required('HUB_GOOGLE_CLIENT_SECRET'),
-      redirectUri: new URL('/login/google/callback', origin).toString(),
+      mode: 'login' as const,
+      google: clientId && clientSecret
+        ? { clientId, clientSecret, redirectUri: new URL('/login/google/callback', origin).toString(), allowedEmails }
+        : undefined,
+      passcode,
       sessionSecret,
-      allowedEmails: required('HUB_ALLOWED_EMAILS').split(','),
+      allowedEmails,
     };
   };
 

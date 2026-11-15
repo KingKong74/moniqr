@@ -1,14 +1,14 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTVerifyGetKey } from 'jose';
 
 /**
- * moniqr's own login: "Continue with Google" (OpenID Connect, authorisation code + PKCE), limited
+ * moniqr's own login: a security code (HUB_PASSCODE) and, when configured, "Continue with Google" (OpenID Connect, authorisation code + PKCE), limited
  * to the emails in HUB_ALLOWED_EMAILS, then a signed session cookie. Traefik is also reachable
  * directly over IPv6, so nothing here trusts anything a proxy adds to the request.
  */
 
 /** Why sign-in failed, as shown on the login page. */
-export type SignInFailure = 'denied' | 'failed' | 'expired' | 'cancelled';
+export type SignInFailure = 'denied' | 'failed' | 'expired' | 'cancelled' | 'passcode' | 'locked';
 
 export class SignInError extends Error {
   constructor(readonly reason: SignInFailure, message: string) {
@@ -157,3 +157,50 @@ export function googleSignIn(opts: GoogleOptions) {
   };
 }
 export type GoogleSignIn = ReturnType<typeof googleSignIn>;
+
+export const PASSCODE_LIMITS = {
+  /** Wrong codes one client may try before it's locked out for the rest of the window. */
+  perClient: 5,
+  clientWindowMs: 15 * 60_000,
+  /** Wrong codes from everyone together before the code is refused for the rest of the window. */
+  global: 20,
+  globalWindowMs: 60 * 60_000,
+};
+
+export type PasscodeResult = 'ok' | 'wrong' | 'locked';
+
+/**
+ * The security code. It signs in as the first allowed email, so the allow list still governs
+ * sessions. Codes are compared as HMACs in constant time. Client addresses can be forged by
+ * anyone who reaches Traefik directly, so the site-wide limit is what really caps guessing:
+ * 20 wrong codes an hour, whoever sends them.
+ */
+export function passcodeGate(code: string, email: string, now: () => number = Date.now) {
+  const key = randomBytes(32);
+  const digest = (s: string) => createHmac('sha256', key).update(s.normalize('NFKC')).digest();
+  const want = digest(code);
+  const clients = new Map<string, { fails: number; since: number }>();
+  let everyone = { fails: 0, since: 0 };
+
+  const fresh = (w: { fails: number; since: number }, windowMs: number) =>
+    now() - w.since >= windowMs ? { fails: 0, since: now() } : w;
+
+  return {
+    email,
+    check(input: string, client: string): PasscodeResult {
+      everyone = fresh(everyone, PASSCODE_LIMITS.globalWindowMs);
+      const mine = fresh(clients.get(client) ?? { fails: 0, since: now() }, PASSCODE_LIMITS.clientWindowMs);
+      clients.set(client, mine);
+      if (everyone.fails >= PASSCODE_LIMITS.global || mine.fails >= PASSCODE_LIMITS.perClient) return 'locked';
+      if (input.length <= 256 && timingSafeEqual(digest(input), want)) {
+        clients.delete(client);
+        return 'ok';
+      }
+      mine.fails++;
+      everyone.fails++;
+      if (clients.size > 10_000) for (const [k, w] of clients) if (now() - w.since >= PASSCODE_LIMITS.clientWindowMs) clients.delete(k);
+      return 'wrong';
+    },
+  };
+}
+export type PasscodeGate = ReturnType<typeof passcodeGate>;

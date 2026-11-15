@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { AgentApiError, type AgentsClient, type RunKind } from '../src/agents.js';
 import { createApp } from '../src/app.js';
-import { sessions, SignInError, type GoogleSignIn, type PendingLogin } from '../src/auth.js';
+import { PASSCODE_LIMITS, passcodeGate, sessions, SignInError, type GoogleSignIn, type PendingLogin } from '../src/auth.js';
 import { formatWhen } from '../src/page.js';
 
 const ORIGIN = 'https://moniqr.com';
@@ -53,6 +53,7 @@ const agents: AgentsClient = {
 let base: string;
 let close: () => void;
 const SECRET = 'test-secret-that-is-at-least-32-characters';
+const CODE = '246810';
 const store = sessions(SECRET, ['bailey@example.com']);
 // Google stand-in: the code "good" signs in Bailey, "stranger" an account that isn't allowed.
 const finished: PendingLogin[] = [];
@@ -70,7 +71,7 @@ before(async () => {
   const app = createApp({
     agents,
     origin: ORIGIN,
-    auth: { mode: 'google', google, sessions: store },
+    auth: { mode: 'login', google, sessions: store, passcode: passcodeGate(CODE, 'bailey@example.com') },
   });
   const server = app.listen(0);
   await new Promise((r) => server.once('listening', r));
@@ -126,6 +127,8 @@ test('the login page is public, has no script and links to Google sign-in', asyn
   const page = await res.text();
   assert.ok(!page.includes('<script'));
   assert.ok(page.includes('href="/login/google?next=%2Fruns"'));
+  assert.ok(page.includes('action="/login"') && page.includes('name="passcode"'));
+  assert.ok(page.includes('name="next" value="/runs"'));
   assert.match(page, /doesn’t have access/);
   assert.equal((await get('/login.css')).status, 200);
   assert.equal((await get('/login?error=<b>')).status, 200);
@@ -344,4 +347,34 @@ test('calendar prepare, retry and undo require owner authentication, origin and 
     assert.equal((await send('revision=1',{...authed,origin:ORIGIN})).status,200);
   }
   assert.deepEqual(calendarOperations.splice(0).map((o:any)=>o.operation),['prepare','execute','undo']);
+});
+
+const postLogin = (body: string, headers: Record<string, string> = { origin: ORIGIN }) =>
+  fetch(base + '/login', { method: 'POST', redirect: 'manual', body, headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers } });
+
+test('the right security code signs in and returns to the page asked for', async () => {
+  const res = await postLogin(`passcode=${CODE}&next=%2Fruns`, { origin: ORIGIN, 'cf-connecting-ip': '198.51.100.1' });
+  assert.equal(res.status, 303);
+  assert.equal(res.headers.get('location'), '/runs');
+  const cookie = res.headers.getSetCookie().find((c) => c.startsWith('__Host-moniqr_session='))!;
+  assert.match(cookie, /HttpOnly/i);
+  assert.equal((await get('/api/hq', { cookie: cookie.split(';')[0]! })).status, 200);
+});
+
+test('a security code from another site is refused before it is checked', async () => {
+  assert.equal((await postLogin(`passcode=${CODE}`, { origin: 'https://evil.example' })).status, 403);
+  assert.equal((await postLogin(`passcode=${CODE}`, {})).status, 403);
+});
+
+test('wrong codes are refused, and a client is locked out after too many', async () => {
+  const ip = { origin: ORIGIN, 'cf-connecting-ip': '203.0.113.9' };
+  for (let i = 0; i < PASSCODE_LIMITS.perClient; i++) {
+    const res = await postLogin('passcode=000000&next=%2Fruns', ip);
+    assert.equal(res.headers.get('location'), '/login?error=passcode&next=%2Fruns');
+    assert.ok(!res.headers.getSetCookie().some((c) => c.startsWith('__Host-moniqr_session=e')));
+  }
+  const locked = await postLogin(`passcode=${CODE}`, ip);
+  assert.equal(locked.headers.get('location'), '/login?error=locked', 'even the right code waits out the lockout');
+  assert.match(await (await get('/login?error=locked')).text(), /Too many wrong codes/);
+  assert.equal((await postLogin(`passcode=${CODE}`, { origin: ORIGIN, 'cf-connecting-ip': '198.51.100.2' })).headers.get('location'), '/');
 });

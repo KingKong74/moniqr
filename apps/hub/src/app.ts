@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { AgentApiError, RUN_KINDS, type AgentsClient, type RunKind } from './agents.js';
-import { LOGIN_MINUTES, newPendingLogin, SESSION_DAYS, SignInError, type GoogleSignIn, type Sessions } from './auth.js';
+import { LOGIN_MINUTES, newPendingLogin, SESSION_DAYS, SignInError, type GoogleSignIn, type PasscodeGate, type Sessions } from './auth.js';
 import { isLoginMessage, renderLogin } from './login.js';
 import { hqData, renderPage } from './page.js';
 
@@ -10,9 +10,9 @@ const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 // Preact, its hooks and htm in one ES module, so the browser needs no build step or import map.
 const PREACT = fileURLToPath(import.meta.resolve('htm/preact/standalone'));
 
-/** Google sign-in with session cookies, or local development signed in as one email. */
+/** The security code and/or Google sign-in with session cookies, or local development signed in as one email. */
 export type HubAuth =
-  | { mode: 'google'; google: GoogleSignIn; sessions: Sessions }
+  | { mode: 'login'; sessions: Sessions; google?: GoogleSignIn; passcode?: PasscodeGate }
   | { mode: 'dev'; email: string };
 
 /** A same-site path to return to after signing in, or '/'. Refuses anything that could leave the hub. */
@@ -95,11 +95,34 @@ export function createApp(opts: HubOptions) {
     const next = safeNext(req.query.next);
     if (await identify(req)) return void res.redirect(303, next);
     const message = isLoginMessage(req.query.error) ? req.query.error : req.query.signed_out !== undefined ? 'signed-out' : undefined;
-    res.type('html').send(renderLogin({ message, next }));
+    res.type('html').send(renderLogin({
+      message, next, passcode: auth.mode === 'dev' || !!auth.passcode, google: auth.mode === 'dev' || !!auth.google,
+    }));
+  });
+
+  // The security code. Same Origin check as every other post, so another site can't submit guesses.
+  app.post('/login', express.urlencoded({ extended: false, limit: '1kb' }), async (req, res) => {
+    if (req.header('origin') !== canonical.origin) return void res.status(403).type('text/plain').send('Cross-site request refused.\n');
+    const next = safeNext(req.body?.next);
+    if (auth.mode === 'dev') return void res.redirect(303, next);
+    if (!auth.passcode) return void res.status(404).type('text/plain').send('Not found.\n');
+    const back = (error: string) => res.redirect(303, `/login?error=${error}${next === '/' ? '' : `&next=${encodeURIComponent(next)}`}`);
+    const code = typeof req.body?.passcode === 'string' ? req.body.passcode.trim() : '';
+    // Cloudflare's client address when present. It can be forged off Cloudflare, which the gate allows for.
+    const client = req.header('cf-connecting-ip') ?? req.socket.remoteAddress ?? 'unknown';
+    const result = code ? auth.passcode.check(code, client) : 'wrong';
+    if (result !== 'ok') {
+      console.warn(`[hub] security code ${result === 'locked' ? 'refused, locked out' : 'wrong'} from ${client}`);
+      return void back(result === 'locked' ? 'locked' : 'passcode');
+    }
+    res.cookie(SESSION, await auth.sessions.issue(auth.passcode.email), { ...cookieOpts, maxAge: SESSION_DAYS * 86_400_000 });
+    console.log(`[hub] signed in with the security code from ${client}`);
+    res.redirect(303, next);
   });
 
   app.get('/login/google', async (req, res) => {
     if (auth.mode === 'dev') return void res.redirect(303, '/');
+    if (!auth.google) return void res.redirect(303, '/login');
     const login = newPendingLogin(safeNext(req.query.next));
     res.cookie(LOGIN, await auth.sessions.sealLogin(login), { ...cookieOpts, maxAge: LOGIN_MINUTES * 60_000 });
     res.redirect(303, auth.google.authUrl(login));
@@ -107,13 +130,15 @@ export function createApp(opts: HubOptions) {
 
   app.get('/login/google/callback', async (req, res) => {
     if (auth.mode === 'dev') return void res.redirect(303, '/');
+    if (!auth.google) return void res.redirect(303, '/login');
+    const google = auth.google;
     const fail = (reason: string) => res.clearCookie(LOGIN, cookieOpts).redirect(303, `/login?error=${reason}`);
     const login = await auth.sessions.openLogin(readCookie(req, LOGIN));
     if (!login || typeof req.query.state !== 'string' || req.query.state !== login.state) return void fail('expired');
     if (req.query.error === 'access_denied') return void fail('cancelled');
     if (typeof req.query.code !== 'string' || !req.query.code) return void fail('failed');
     try {
-      const email = await auth.google.finish(req.query.code, login);
+      const email = await google.finish(req.query.code, login);
       res.clearCookie(LOGIN, cookieOpts);
       res.cookie(SESSION, await auth.sessions.issue(email), { ...cookieOpts, maxAge: SESSION_DAYS * 86_400_000 });
       console.log(`[hub] signed in ${email}`);

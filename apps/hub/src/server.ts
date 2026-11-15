@@ -1,13 +1,18 @@
 import { agentsClient } from './agents.js';
 import { createApp, type HubAuth } from './app.js';
-import { googleSignIn, sessions } from './auth.js';
+import { googleSignIn, passcodeGate, sessions } from './auth.js';
 import { hubConfig } from './config.js';
 
 const config = hubConfig();
 const { login } = config;
 const auth: HubAuth = login.mode === 'dev'
   ? login
-  : { mode: 'google', google: googleSignIn(login), sessions: sessions(login.sessionSecret, login.allowedEmails) };
+  : {
+      mode: 'login',
+      sessions: sessions(login.sessionSecret, login.allowedEmails),
+      google: login.google && googleSignIn(login.google),
+      passcode: login.passcode ? passcodeGate(login.passcode, login.allowedEmails[0]!) : undefined,
+    };
 
 const app = createApp({
   agents: agentsClient(config.agentsApiUrl, config.apiToken),

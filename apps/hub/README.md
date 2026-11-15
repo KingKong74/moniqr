@@ -18,7 +18,7 @@ It is a thin client of the agent API. The Express server sends a page shell, `pu
 
 The Projects and Finance sidebar buttons open dashboards inside HQ. Projects shows sample resume context, attention items, filterable project cards and recent activity inspired by Stack. Finance shows sample balances, cash flow, budgets, transactions and bills. Both dashboards are labelled as design previews; they do not fetch live Stack or Finance data. Explicit **Open Stack** and **Open Finance** links lead to the full apps.
 
-When checking a live UI change, verify the running hub's assets after deployment. A successful push to `main` does not establish that Dokploy rebuilt the hub. The Google sign-in version requires the `HUB_GOOGLE_CLIENT_ID`, `HUB_GOOGLE_CLIENT_SECRET` and `HUB_SESSION_SECRET` settings before deployment; a hub still using Cloudflare Access must retain its existing authentication until that configuration is ready.
+When checking a live UI change, verify the running hub's assets after deployment. A successful push to `main` does not establish that Dokploy rebuilt the hub. The hub needs `HUB_SESSION_SECRET`, `HUB_ALLOWED_EMAILS` and a sign-in method (`HUB_PASSCODE` and/or the `HUB_GOOGLE_*` pair) in Dokploy's environment, or it won't start.
 
 The latest brief, recent runs, *Run EA now*, project links, admin inbox findings and Google Calendar events are real. The calendar preserves the current Brisbane week across the connected Google calendars through the agent API and refreshes once per minute. Approved Moniqr additions go to the selected main calendar. Configure the Google read credentials as described in the root README; the calendar shows a disconnected or unavailable message when it cannot load. Calendar writing requires a separate API-only connection.
 
@@ -32,13 +32,17 @@ Lifestyle cards, the carousel and chat still come from `src/mock.ts`, and the pa
 
 ## Login
 
-moniqr.com has its own sign-in page at `/login`: **Continue with Google** (OpenID Connect authorisation code flow with PKCE, state and nonce), asking Google only for `openid email`. The ID token's signature, issuer, client ID and nonce are checked, and the email must be verified and listed in `HUB_ALLOWED_EMAILS`. The hub then sets a 30-day `__Host-moniqr_session` cookie (HttpOnly, Secure, SameSite=Lax), signed with `HUB_SESSION_SECRET`. Every request re-checks the allow list, so removing an email locks it out, and rotating the secret signs everyone out. **Sign out** in the top bar clears the cookie.
+moniqr.com has its own sign-in page at `/login`, with no Cloudflare Access in front of it.
 
-Pages opened without a session redirect to `/login` and return to the same page after sign-in. Data requests get a 401, and HQ reloads to the login page. `/health`, `/login`, `/login.css`, the brand icons and the Google callback are the only open routes. Run requests, finding and action decisions, and sign-out accept only posts whose `Origin` is the hub itself. Scripts and images load only from the hub, the login page has no script, and the one third party is Google Fonts for Barlow. The two brand icons under `/assets/` are open so the login page can show them.
+**Security code** (`HUB_PASSCODE`): a plain form, no script. A correct code signs in as the first email in `HUB_ALLOWED_EMAILS`. Codes are compared as HMACs in constant time. Wrong codes are limited to 5 per client per 15 minutes and 20 across everyone per hour; past either limit the code is refused, even when it's right, until the window passes. Client addresses come from Cloudflare's `CF-Connecting-IP` and can be forged by anyone who reaches Traefik directly, so the site-wide limit is what really caps guessing. The counters live in memory and reset when the hub restarts. Change the code in Dokploy's environment and redeploy.
 
-Cloudflare Access no longer covers moniqr.com or www. It still protects the other subdomains, such as finance.moniqr.com, which don't use this login.
+**Continue with Google** (optional, when `HUB_GOOGLE_CLIENT_ID` and `HUB_GOOGLE_CLIENT_SECRET` are set): OpenID Connect authorisation code flow with PKCE, state and nonce, asking Google only for `openid email`. The ID token's signature, issuer, client ID and nonce are checked, and the email must be verified and listed in `HUB_ALLOWED_EMAILS`. Google setup: create an OAuth client of type *Web application* with the authorised redirect URI `https://moniqr.com/login/google/callback`.
 
-Google setup: in the Google Cloud project, create an OAuth client of type *Web application* with the authorised redirect URI `https://moniqr.com/login/google/callback`, then set `HUB_GOOGLE_CLIENT_ID` and `HUB_GOOGLE_CLIENT_SECRET` on the hub.
+Either way the hub sets a 30-day `__Host-moniqr_session` cookie (HttpOnly, Secure, SameSite=Lax), signed with `HUB_SESSION_SECRET`. Every request re-checks the allow list, so removing an email locks it out, and rotating the secret signs everyone out. **Sign out** in the top bar clears the cookie.
+
+Pages opened without a session redirect to `/login` and return to the same page after sign-in. Data requests get a 401, and HQ reloads to the login page. `/health`, `/login`, `/login.css`, the brand icons and the Google callback are the only open routes. The security code, run requests, finding and action decisions, and sign-out accept only posts whose `Origin` is the hub itself. Scripts and images load only from the hub, the login page has no script, and the one third party is Google Fonts for Barlow.
+
+Cloudflare Access doesn't cover moniqr.com or www. It still protects the other subdomains, such as finance.moniqr.com, which don't use this login.
 
 ## Local development
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { before, test } from 'node:test';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose';
-import { googleSignIn, newPendingLogin, sessions, SignInError, type GoogleSignIn } from '../src/auth.js';
+import { googleSignIn, newPendingLogin, PASSCODE_LIMITS, passcodeGate, sessions, SignInError, type GoogleSignIn } from '../src/auth.js';
 
 const CLIENT = 'client-id.apps.googleusercontent.com';
 const REDIRECT = 'https://moniqr.com/login/google/callback';
@@ -105,4 +105,22 @@ test('sessions round trip, honour the allow list and reject tampering', async ()
   assert.deepEqual(await store.openLogin(sealed), login);
   assert.equal(await store.openLogin(token), null);
   assert.equal(await store.read(sealed), null);
+});
+
+test('the security code gate caps guesses per client and across everyone, then resets', () => {
+  let t = 0;
+  const gate = passcodeGate('135790', 'bailey@example.com', () => t);
+  assert.equal(gate.check('135790', 'a'), 'ok');
+  assert.equal(gate.check('13579', 'a'), 'wrong');
+  assert.equal(gate.check('x'.repeat(10_000), 'a'), 'wrong');
+  // Forged addresses get fresh per-client buckets, so the site-wide cap is what stops guessing.
+  for (let i = 0; i < PASSCODE_LIMITS.global; i++) gate.check('000000', `forged-${i}`);
+  assert.equal(gate.check('135790', 'someone-new'), 'locked');
+  t += PASSCODE_LIMITS.globalWindowMs;
+  assert.equal(gate.check('135790', 'someone-new'), 'ok');
+  for (let i = 0; i < PASSCODE_LIMITS.perClient; i++) assert.equal(gate.check('000000', 'b'), 'wrong');
+  assert.equal(gate.check('135790', 'b'), 'locked');
+  assert.equal(gate.check('135790', 'c'), 'ok');
+  t += PASSCODE_LIMITS.clientWindowMs;
+  assert.equal(gate.check('135790', 'b'), 'ok');
 });

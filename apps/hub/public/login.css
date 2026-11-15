@@ -8,6 +8,7 @@
   --line: #ebe3d7;
   --fg-1: #251f1b; --fg-2: #48413a; --fg-3: #625a51; --fg-4: #7e756b;
   --focus: #f7b393;
+  --action: #f29a72; --action-hover: #ea8456; --on-action: #2b1a12;
   --error-fg: #9c2d55; --error-bg: #f9e0e8; --error-line: rgb(194 65 110 / 0.35);
   --info-bg: #fff4ee; --info-line: #fcd0b8;
   --shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 24px 60px -28px rgb(37 31 27 / 0.35);
@@ -23,6 +24,7 @@
     --line: rgb(238 238 250 / 0.10);
     --fg-1: #eeeefa; --fg-2: #d6d5e8; --fg-3: #a6a5be; --fg-4: #7e7d98;
     --focus: #8780ff;
+    --action: #6c63ff; --action-hover: #7f77ff; --on-action: #ffffff;
     --error-fg: #ffa3be; --error-bg: rgb(255 122 162 / 0.12); --error-line: rgb(255 122 162 / 0.38);
     --info-bg: rgb(108 99 255 / 0.10); --info-line: rgb(108 99 255 / 0.38);
     --shadow: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 24px 60px -24px rgb(0 0 0 / 0.65);
@@ -85,3 +87,16 @@ h1 { margin: 0 0 8px; font-size: 26px; font-weight: 500; letter-spacing: -0.02em
 @media (prefers-reduced-motion: reduce) {
   .google { transition: none; }
 }
+
+/* Security code form */
+.code { display: flex; flex-direction: column; gap: 8px; }
+.code label { font-size: 13px; color: var(--fg-3); }
+.code input { font: 500 18px/1 var(--font); letter-spacing: 0.2em; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg-1); outline: none; }
+.code input::placeholder { color: var(--fg-4); }
+.code input:focus-visible { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 35%, transparent); }
+.code button { margin-top: 6px; height: 48px; border: 0; border-radius: 999px; cursor: pointer; font: 500 15px/1 var(--font); background: var(--action); color: var(--on-action); transition: background-color 0.15s ease, transform 0.15s ease; }
+.code button:hover { background: var(--action-hover); }
+.code button:active { transform: translateY(1px); }
+.code button:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.or { display: flex; align-items: center; gap: 12px; margin: 20px 0; font-size: 13px; color: var(--fg-4); }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
