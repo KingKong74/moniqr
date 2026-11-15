@@ -20,7 +20,7 @@ export function applyTheme(theme, remember = false) {
     root.classList.remove('logo-flip');
     void root.offsetWidth; // restart the animation on a quick second click
     root.classList.add('logo-flip');
-    flipTimer = setTimeout(() => root.classList.remove('logo-flip'), 700);
+    flipTimer = setTimeout(() => root.classList.remove('logo-flip'), 520);
   }
   root.dataset.theme = theme;
   if (remember) try { localStorage.setItem(THEME_KEY, theme); } catch {}

@@ -490,8 +490,8 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 
 
 /* — Switching light/dark: the moniqr logo flips, swapping icons while it's edge-on — */
-:root.logo-flip .brand-mark { animation: logoFlip 560ms cubic-bezier(0.4, 0, 0.2, 1); }
-:root.logo-flip .brand-mark img { transition: opacity 0s 280ms; }
+:root.logo-flip .brand-mark { animation: logoFlip 420ms cubic-bezier(0.4, 0, 0.2, 1); }
+:root.logo-flip .brand-mark img { transition: opacity 0s 210ms; }
 @keyframes logoFlip {
   0% { transform: perspective(300px) rotateY(0); }
   50% { transform: perspective(300px) rotateY(90deg) scale(0.92); }
