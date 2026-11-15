@@ -10,6 +10,7 @@ test('only timed unresolved requests enter the local overlay',()=>{
   assert.equal(calendarLayers([], [action],false).requests.length,0);
   for(const status of ['rejected','expired'])assert.equal(calendarLayers([],[{...action,status}]).requests.length,0);
   assert.equal(calendarLayers([],[{...action,kind:'manual'}]).requests.length,0);
+  assert.equal(calendarLayers([],[{...action,source_snapshot:{demo:true}}]).requests.length,0,'demo requests never reach the calendar');
   assert.equal(calendarLayers([],[{...action,proposed_action:{calendar:{title:'Unknown'},missing_details:[]}}]).requests.length,0);
   assert.equal(calendarLayers([],[{...action,proposed_action:{...action.proposed_action,missing_details:['Unclear date']}}]).requests.length,0);
 });

@@ -18,7 +18,8 @@ export function calendarLayers(events, actions, showRequests = true, now = Date.
   }
   const requests = showRequests ? actions.filter(a => {
     const c = a.proposed_action?.calendar;
-    return a.kind === 'calendar_create' && ['pending','approved'].includes(a.status) &&
+    // Demo requests are previews; they never appear on the calendar.
+    return a.kind === 'calendar_create' && !a.source_snapshot?.demo && ['pending','approved'].includes(a.status) &&
       !['succeeded','undone','undo_uncertain'].includes(a.execution_status) && c?.start && c.end &&
       !a.proposed_action.missing_details?.length && Number.isFinite(Date.parse(c.start)) && Date.parse(c.end) > Date.parse(c.start);
   }).map(a => ({ title: a.proposed_action.calendar.title, start: a.proposed_action.calendar.start,
