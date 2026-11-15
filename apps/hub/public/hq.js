@@ -325,7 +325,7 @@ class App extends Component {
           ${this.renderTopbar(v)}
           <div class="body">
             <div class="content">
-              ${this.state.view === 'hq' ? this.renderHq(v) : this.state.view === 'projects' ? this.renderProjectDashboard() : this.state.view === 'finance' ? this.renderFinanceDashboard() : this.renderBriefing(v)}
+              ${this.state.view === 'hq' ? this.renderHq(v) : this.state.view === 'inbox' ? html`<main class="main">${this.renderInbox(v)}</main>` : this.state.view === 'projects' ? this.renderProjectDashboard() : this.state.view === 'finance' ? this.renderFinanceDashboard() : this.renderBriefing(v)}
             </div>
           </div>
         </div>
@@ -398,7 +398,7 @@ class App extends Component {
     const items = [
       { label: 'Home', view: 'home', go: () => this.openView('home') },
       { label: 'HQ', view: 'hq', go: () => this.openView('hq') },
-      { label: 'Inbox', badge: v.unread || '', go: () => { this.openView('hq'); this.later(() => document.getElementById('inbox')?.scrollIntoView({ behavior: 'smooth' }), 0); } },
+      { label: 'Inbox', view: 'inbox', badge: v.unread || '', go: () => this.openView('inbox') },
       { label: 'Projects', view: 'projects', go: () => this.openView('projects') },
       { label: 'Finance', view: 'finance', go: () => this.openView('finance') },
       { label: 'Knowledge' },
@@ -456,7 +456,7 @@ class App extends Component {
     return html`
       <header class="topbar">
         <nav class="tabs" aria-label="Sections">
-          ${[['home', 'Home'], ['hq', 'HQ'], ['projects', 'Projects'], ['finance', 'Finance']].map(([id, label]) => html`<button type="button"
+          ${[['home', 'Home'], ['hq', 'HQ'], ['inbox', 'Inbox'], ['projects', 'Projects'], ['finance', 'Finance']].map(([id, label]) => html`<button type="button"
             class=${this.state.view === id || (id === 'hq' && this.state.view === 'briefing') ? 'on' : ''} aria-current=${this.state.view === id ? 'page' : null}
             onClick=${() => this.openView(id)}>${label}</button>`)}
         </nav>
@@ -488,7 +488,7 @@ class App extends Component {
           </div>
         </section>
         <div class="hero">${this.renderCarousel(v)} ${this.renderDecision(v)}</div>
-        ${this.renderFocusCards(v)} ${this.renderActions()} ${this.renderInbox(v)} ${this.renderGlance(v)} ${this.renderCalendar(v)}
+        ${this.renderFocusCards(v)} ${this.renderActions()} ${this.renderGlance(v)} ${this.renderCalendar(v)}
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px;">
           ${this.renderHabits(v)} ${this.renderMeals(v)} ${this.renderPeople(v)}
         </div>

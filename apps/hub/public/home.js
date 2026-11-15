@@ -202,7 +202,7 @@ export class Home extends Component {
       ({ label: i ? '****' : label, on: !i, aria: i ? 'Sign in to open' : null, go: i ? this.openSignIn : () => {} })) : [
       { label: 'Home', on: true, go: () => {} },
       { label: 'HQ', go: () => go('hq') },
-      { label: 'Inbox', count: unread, go: () => go('hq', 'inbox') },
+      { label: 'Inbox', count: unread, go: () => go('inbox') },
       { label: 'Projects', go: () => go('projects') },
       { label: 'Finance', go: () => go('finance') },
     ];
@@ -230,7 +230,7 @@ export class Home extends Component {
             <p>${locked ? 'Your day is ready. Sign in to see it.' : lede}</p>
             ${locked ? html`<div class="home-ctas"><button type="button" class="home-cta" onClick=${this.openSignIn}>Sign in</button></div>` : html`<div class="home-ctas">
               <button type="button" class="home-cta" onClick=${() => this.setState({ listOpen: true, sel: null })}>Read today’s list</button>
-              <button type="button" class="home-link" onClick=${() => go('hq', 'inbox')}>Open inbox${unread ? ` · ${unread} new` : ''}</button>
+              <button type="button" class="home-link" onClick=${() => go('inbox')}>Open inbox${unread ? ` · ${unread} new` : ''}</button>
             </div>`}
           </section>
 
