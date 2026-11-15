@@ -121,11 +121,12 @@ test('everything else needs a session: pages send you to the login page, data re
   assert.equal((await get('/api/hq')).status, 401);
 });
 
-test('the login page is public, has no script and links to Google sign-in', async () => {
+test('the login page is public, is Home in its locked state and offers both sign-ins', async () => {
   const res = await get('/login?next=%2Fruns&error=denied');
   assert.equal(res.status, 200);
   const page = await res.text();
-  assert.ok(!page.includes('<script'));
+  assert.deepEqual(page.match(/<script[^>]*>/g), ['<script type="module" src="/locked.js">'], 'one script, from the hub, nothing inline');
+  assert.ok(page.includes('data-next="/runs"') && page.includes('data-passcode="1"') && page.includes('data-google="1"'));
   assert.ok(page.includes('href="/login/google?next=%2Fruns"'));
   assert.ok(page.includes('action="/login"') && page.includes('name="passcode"'));
   assert.ok(page.includes('name="next" value="/runs"'));
@@ -215,13 +216,18 @@ test('the page shell loads its script and styles from the hub only', async () =>
   }
 });
 
-test('the brand icons load without a session, for the login page, but nothing else does', async () => {
+test('the signed-out page loads without a session, but the app and its data don\'t', async () => {
   for (const path of ['/assets/moniqr-icon-dark.png', '/assets/moniqr-icon-light.png']) {
     const res = await get(path);
     assert.equal(res.status, 200, path);
     assert.equal(res.headers.get('content-type'), 'image/png');
   }
-  assert.equal((await get('/home.js', { accept: 'application/json' })).status, 401);
+  for (const path of ['/locked.js', '/home.js', '/theme.js', '/energy-orb.js', '/calendar-overlay.js', '/hq.css', '/vendor/preact-htm.js']) {
+    assert.equal((await get(path)).status, 200, `${path} is part of the signed-out page`);
+  }
+  for (const path of ['/hq.js', '/dashboard-mocks.js', '/api/hq']) {
+    assert.equal((await get(path, { accept: 'application/json' })).status, 401, `${path} needs a session`);
+  }
   const login = await (await get('/login')).text();
   assert.ok(login.includes('/assets/moniqr-icon-light.png'));
 });

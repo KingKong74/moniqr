@@ -6,18 +6,11 @@
 import { Component, html, render } from '/vendor/preact-htm.js';
 import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
 import { projectSamples, financeSamples } from './dashboard-mocks.js';
-import { Home, icon } from './home.js';
+import { Home } from './home.js';
 
-// Light or dark, remembered per browser; the device setting decides until Bailey picks one.
-const THEME_KEY = 'moniqr-theme';
-function initialTheme() {
-  try {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved === 'light' || saved === 'dark') return saved;
-  } catch {}
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-document.documentElement.dataset.theme = initialTheme();
+import { applyTheme, initialTheme } from './theme.js';
+
+applyTheme(initialTheme());
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -272,22 +265,29 @@ class App extends Component {
   }
 
   openView(view) {
-    this.setState({ view });
-    window.scrollTo(0, 0);
+    this.go(view);
   }
 
   /** Open a view, optionally scrolled to a section and with a proposal selected. */
   go = (view, anchor, actionId) => {
-    this.setState({ view, ...(actionId ? { actionSel: actionId, actionFilter: 'all', actionHistory: null } : {}) });
-    window.scrollTo(0, 0);
-    if (anchor) this.later(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' }), 0);
+    const from = this.state.view;
+    const swap = () => new Promise((done) => this.setState(
+      { view, ...(actionId ? { actionSel: actionId, actionFilter: 'all', actionHistory: null } : {}) },
+      () => { window.scrollTo(0, 0); done(); },
+    ));
+    const after = () => anchor && document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' });
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (view === from || reduced || !document.startViewTransition) return void swap().then(after);
+    // Home zooms and blurs away into the page; coming back, it settles in from behind.
+    const root = document.documentElement;
+    root.classList.toggle('leaving-home', from === 'home');
+    root.classList.toggle('entering-home', view === 'home');
+    const t = document.startViewTransition(swap);
+    t.finished.finally(() => { root.classList.remove('leaving-home', 'entering-home'); after(); });
   };
 
   toggleTheme = () => {
-    const theme = this.state.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem(THEME_KEY, theme); } catch {}
-    this.setState({ theme });
+    this.setState({ theme: applyTheme(this.state.theme === 'dark' ? 'light' : 'dark', true) });
   };
 
   // — render —
@@ -400,13 +400,13 @@ class App extends Component {
     const dot = { run: ['var(--accent)', 'var(--accent)'], wait: ['transparent', 'var(--a400)'], idle: ['transparent', 'var(--n600)'] };
     return html`
       <nav class="nav">
-        <div class="row" style="gap: 10px; padding: 0 8px;">
+        <button type="button" class="brand-btn" onClick=${this.toggleTheme} title=${this.state.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
           <span class="brand-mark"><img class="ic-light" src="/assets/moniqr-icon-light.png" alt="" /><img class="ic-dark" src="/assets/moniqr-icon-dark.png" alt="" /></span>
-          <div class="col brand-text">
+          <span class="col brand-text">
             <span class="bright" style="font-size: 18px; font-weight: 600; letter-spacing: -0.015em;">moniqr</span>
             <span class="fs12 muted">${v.mock.name}’s personal OS</span>
-          </div>
-        </div>
+          </span>
+        </button>
         <div class="col items" style="gap: 2px;">
           ${items.map((n) =>
             n.href
@@ -460,8 +460,6 @@ class App extends Component {
         </div>
         <span class="sample" title="The brief, calendar, email findings, proposal decisions, EA runs and links are live. Lifestyle cards and chat are samples.">Some sample cards</span>
         <span class="clock fs13 muted nowrap">${clock}</span>
-        <button type="button" class="theme-btn" onClick=${this.toggleTheme} aria-label=${this.state.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          title=${this.state.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>${icon(this.state.theme === 'dark' ? 'sun' : 'moon')}</button>
         <form method="post" action="/logout" class="signout">
           <button type="submit" class="signout-btn fs12" title=${`Signed in as ${this.state.data?.email ?? ''}`}>Sign out</button>
         </form>

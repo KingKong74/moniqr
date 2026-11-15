@@ -88,8 +88,15 @@ export function todayItems(data, nowMs) {
   return items;
 }
 
+// Signed out, the orb carries six unlabelled items, as in the design's locked state.
+const LOCKED_ITEMS = ['sunrise', 'activity', 'book', 'food', 'plus', 'people'].map((ic, i) => ({
+  key: `locked${i}`, icon: ic, hue: 0, label: 'Sign in to see this', short: '', sub: '', time: '', past: false, bar: 44 + (i * 17) % 40,
+}));
+const bars = (widths) => html`<span class="redact-lines">${widths.map((w) => html`<span style=${`width: ${w}%;`}></span>`)}</span>`;
+
 export class Home extends Component {
-  state = { sel: null, listOpen: false, phases: [] };
+  state = { sel: null, listOpen: false, phases: [], signInOpen: !!this.props.locked?.message };
+  codeRef = (el) => (this.codeEl = el);
   orbRef = (el) => (this.orbEl = el);
 
   componentDidMount() {
@@ -116,7 +123,7 @@ export class Home extends Component {
       if (/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName || '') || e.metaKey || e.ctrlKey) return;
       if (e.key === 'ArrowRight') { e.preventDefault(); this.step(1); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); this.step(-1); }
-      else if (e.key === 'Escape' && (this.state.sel != null || this.state.listOpen)) this.setState({ sel: null, listOpen: false });
+      else if (e.key === 'Escape') this.setState({ sel: null, listOpen: false, ...(this.props.locked ? { signInOpen: false } : {}) });
     };
     window.addEventListener('keydown', this.onKey);
   }
@@ -127,7 +134,10 @@ export class Home extends Component {
     this.endDrag?.();
   }
 
+  openSignIn = () => this.setState({ signInOpen: true, sel: null, listOpen: false }, () => this.codeEl?.focus());
+
   step(d) {
+    if (this.props.locked) return;
     const n = this.items?.length ?? 0;
     if (!n) return;
     this.setState((s) => ({ listOpen: false, sel: s.sel == null ? (d > 0 ? 0 : n - 1) : (s.sel + d + n) % n }));
@@ -152,12 +162,14 @@ export class Home extends Component {
 
   orbClick = () => {
     if (this.moved) { this.moved = false; return; }
+    if (this.props.locked) return this.openSignIn();
     this.setState({ listOpen: true, sel: null });
   };
 
-  render({ data, now, name, theme, pending, unread, onTheme, go }) {
+  render({ data, now, name, theme, pending, unread, onTheme, go, locked }) {
     const dark = theme === 'dark';
-    const items = (this.items = todayItems(data, now));
+    if (locked) { data = {}; pending = 0; unread = 0; go = this.openSignIn; }
+    const items = (this.items = locked ? LOCKED_ITEMS : todayItems(data, now));
     const sel = this.state.sel != null && this.state.sel < items.length ? this.state.sel : null;
     const phs = this.state.phases;
     const cY = Math.cos(this.yaw || 0), sY = Math.sin(this.yaw || 0), cP = Math.cos(this.pitch || 0), sP = Math.sin(this.pitch || 0);
@@ -186,7 +198,8 @@ export class Home extends Component {
       : `${briefToday ? 'Your brief is ready' : 'No brief yet today'}, ${left ? `${left} thing${left === 1 ? '' : 's'} still on the calendar` : 'nothing else on the calendar'} and ${pending ? `${pending} waiting on your yes` : 'nothing waiting on you'}.`;
     const dateLabel = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(now));
     const open = (x) => go(x.open === 'briefing' ? 'briefing' : 'hq', x.open === 'actions' ? 'actions' : x.open === 'calendar' ? 'calendar' : null, x.actionId);
-    const tabs = [
+    const tabs = locked ? ['Home', 'HQ', 'Inbox', 'Projects', 'Finance'].map((label, i) =>
+      ({ label: i ? '****' : label, on: !i, aria: i ? 'Sign in to open' : null, go: i ? this.openSignIn : () => {} })) : [
       { label: 'Home', on: true, go: () => {} },
       { label: 'HQ', go: () => go('hq') },
       { label: 'Inbox', count: unread, go: () => go('hq', 'inbox') },
@@ -203,50 +216,50 @@ export class Home extends Component {
               <span class="word">moniqr</span>
             </button>
             <nav class="home-tabs" aria-label="Sections">
-              ${tabs.map((t) => html`<button type="button" class=${t.on ? 'on' : ''} aria-current=${t.on ? 'page' : null} onClick=${t.go}>
+              ${tabs.map((t) => html`<button type="button" class=${`${t.on ? 'on' : ''}${t.aria ? ' masked' : ''}`} aria-current=${t.on ? 'page' : null} aria-label=${t.aria} title=${t.aria} onClick=${t.go}>
                 ${t.label}${t.count ? html`<span class="count">${t.count}</span>` : null}</button>`)}
             </nav>
             <div class="home-actions">
-              <button type="button" class="home-ghost round" onClick=${onTheme} aria-label=${dark ? 'Switch to light mode' : 'Switch to dark mode'}>${icon(dark ? 'sun' : 'moon')}</button>
-              <form method="post" action="/logout"><button type="submit" class="home-ghost" title=${`Signed in as ${data.email}`}>Sign out</button></form>
+              ${locked ? html`<button type="button" class="home-ghost" onClick=${this.openSignIn}>Sign in</button>`
+                : html`<form method="post" action="/logout"><button type="submit" class="home-ghost" title=${`Signed in as ${data.email}`}>Sign out</button></form>`}
             </div>
           </header>
 
           <section class="home-hero">
-            <h1>${greeting}${name ? `, ${name}` : ''}</h1>
-            <p>${lede}</p>
-            <div class="home-ctas">
+            <h1>${locked ? 'Welcome back' : `${greeting}${name ? `, ${name}` : ''}`}</h1>
+            <p>${locked ? 'Your day is ready. Sign in to see it.' : lede}</p>
+            ${locked ? html`<div class="home-ctas"><button type="button" class="home-cta" onClick=${this.openSignIn}>Sign in</button></div>` : html`<div class="home-ctas">
               <button type="button" class="home-cta" onClick=${() => this.setState({ listOpen: true, sel: null })}>Read today’s list</button>
               <button type="button" class="home-link" onClick=${() => go('hq', 'inbox')}>Open inbox${unread ? ` · ${unread} new` : ''}</button>
-            </div>
+            </div>`}
           </section>
 
           <section class="home-stage-wrap">
             <div class="home-stage">
               <button type="button" class="home-card left" onClick=${() => go(data.brief ? 'briefing' : 'hq')}>
                 <span class="t"><i style=${`background: ${col(210)};`}></i>Your latest brief</span>
-                ${data.brief
+                ${locked ? bars([92, 78, 54]) : data.brief
                   ? html`<p class="clamp3">${data.brief.summary || 'Open it to read the full brief.'}</p><span class="meta">${data.brief.kind} · ${data.brief.when}</span>`
                   : html`<p>No brief yet. Run the EA from HQ and it will appear here.</p>`}
               </button>
 
               <div class=${`orb${this.drag ? ' dragging' : ''}`} ref=${this.orbRef} onPointerDown=${this.dragStart} onClick=${this.orbClick}
-                title="Drag to turn · click for today’s list">
+                title=${locked ? 'Sign in to see your day' : 'Drag to turn · click for today’s list'}>
                 <energy-orb mode=${dark ? 'orange' : 'blue'} motion=${this.reduced?.matches ? 'false' : 'true'}
                   yaw=${String(this.yaw || 0)} pitch=${String(this.pitch || 0)} grid=${this.drag ? '1' : '0'}></energy-orb>
                 <svg class="links" viewBox="0 0 100 100" preserveAspectRatio="none" style="z-index: 2;" aria-hidden="true">
                   ${chips.slice(1).map((b, k) => { const a = chips[k], depth = Math.min(a.z, b.z);
-                    return html`<line x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y} stroke=${col(a.e.hue)} stroke-opacity=${(0.18 + 0.36 * (depth + 1) / 2).toFixed(3)}
+                    return html`<line x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y} stroke=${locked ? 'var(--top)' : col(a.e.hue)} stroke-opacity=${locked ? '0.08' : (0.18 + 0.36 * (depth + 1) / 2).toFixed(3)}
                       stroke-width="1.2" stroke-dasharray="2 3" vector-effect="non-scaling-stroke" />`; })}
                 </svg>
                 ${chips.map((c) => html`<div key=${c.e.key} class=${`orb-chip${c.i === sel ? ' sel' : ''}`}
                   style=${`left: ${c.x}%; top: ${c.y}%; z-index: ${c.front ? 3 : 0};`}>
                   <button type="button" title=${c.e.label} aria-label=${`${c.e.time} ${c.e.label}`}
                     style=${`transform: translate(-50%, -50%) scale(${c.scale}); filter: ${c.blur}; opacity: ${c.opacity};`}
-                    onClick=${(ev) => { ev.stopPropagation(); this.setState((s) => ({ sel: s.sel === c.i ? null : c.i, listOpen: false })); }}>
-                    <span class="ic" style=${`filter: drop-shadow(0 0 6px ${col(c.e.hue)});`}>${icon(c.e.icon, col(c.e.hue), 2.2)}
+                    onClick=${(ev) => { ev.stopPropagation(); if (locked) return this.openSignIn(); this.setState((s) => ({ sel: s.sel === c.i ? null : c.i, listOpen: false })); }}>
+                    <span class="ic" style=${locked ? '' : `filter: drop-shadow(0 0 6px ${col(c.e.hue)});`}>${icon(c.e.icon, locked ? 'var(--redact)' : col(c.e.hue), 2.2)}
                       ${c.e.past && html`<span class="ok">${icon('check', '#fff', 4)}</span>`}</span>
-                    <span><b>${c.e.short}</b><small>${c.e.sub}</small></span>
+                    ${locked ? html`<span class="redact-chip" style=${`width: ${c.e.bar}px;`}></span>` : html`<span><b>${c.e.short}</b><small>${c.e.sub}</small></span>`}
                   </button>
                 </div>`)}
                 ${!items.length && html`<div class="orb-chip" style="left: 50%; top: 50%; z-index: 3;"><button type="button" style="transform: translate(-50%, -50%); opacity: .9;" onClick=${(ev) => { ev.stopPropagation(); go('hq', 'calendar'); }}>
@@ -270,12 +283,21 @@ export class Home extends Component {
 
               <button type="button" class="home-card right" onClick=${() => go('hq', 'actions')}>
                 <span class="t"><i style="background: var(--accent-dot);"></i>Waiting on you</span>
-                ${data.actionsError ? html`<p>Proposals couldn’t load. HQ retries automatically.</p>`
+                ${locked ? bars([88, 70, 40]) : data.actionsError ? html`<p>Proposals couldn’t load. HQ retries automatically.</p>`
                   : pending ? html`<p>${pending} proposal${pending === 1 ? '' : 's'} to review${pendingItems.length ? ': ' + pendingItems.slice(0, 3).map((a) => a.title).join(', ') : ''}. Nothing goes out until you say so.</p>`
                   : html`<p>Nothing needs your yes right now.</p>`}
-                <span class="meta">Action review</span>
+                ${!locked && html`<span class="meta">Action review</span>`}
               </button>
 
+              ${locked && this.state.signInOpen && html`<form class="home-signin" method="post" action="/login" aria-label="Sign in">
+                <div class="hd"><b>Sign in</b><button type="button" class="home-pill soft" onClick=${() => this.setState({ signInOpen: false })}>Cancel</button></div>
+                ${locked.message && html`<p class="home-alert" role="alert">${locked.message}</p>`}
+                <input type="hidden" name="next" value=${locked.next || '/'} />
+                ${locked.passcode && html`<label>Security code<input ref=${this.codeRef} name="passcode" type="password" inputmode="numeric"
+                  autocomplete="current-password" required maxlength="64" placeholder="•••••••" autofocus /></label>
+                <button type="submit" class="home-cta">Unlock</button>`}
+                ${locked.google && html`<a class="home-google" href=${locked.googleHref}>Continue with Google</a>`}
+              </form>`}
               ${this.state.listOpen && html`<div class="home-list" role="dialog" aria-label="Today">
                 <div class="hd"><span><b>Today</b><small>${dateLabel}</small></span>
                   <button type="button" class="home-pill soft" onClick=${() => this.setState({ listOpen: false })}>Close</button></div>

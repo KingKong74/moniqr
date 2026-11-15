@@ -13,7 +13,8 @@
   class EnergyOrb extends HTMLElement {
     connectedCallback() {
       if (this._init) return; this._init = true;
-      Object.assign(this.style, { display: 'block', width: '100%', height: '100%' });
+      // Size comes from the page's CSS (an inset box around the orb), so nothing is set inline.
+      this.style.display = 'block';
       const c = document.createElement('canvas');
       c.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block';
       this.appendChild(c); this._c = c; this._ctx = c.getContext('2d');

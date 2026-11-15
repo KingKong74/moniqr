@@ -86,9 +86,15 @@ export function createApp(opts: HubOptions) {
     res.sendFile('login.css', { root: PUBLIC_DIR });
   });
 
-  // The brand icons are on the login page too, so they're open like its stylesheet.
-  app.get(['/assets/moniqr-icon-dark.png', '/assets/moniqr-icon-light.png'], (req, res) => {
+  // The signed-out page is Home in its locked state, so its code, styles and icons are open.
+  // None of these carry data; everything with data stays behind the session check below.
+  const PUBLIC_FILES = ['/assets/moniqr-icon-dark.png', '/assets/moniqr-icon-light.png', '/hq.css', '/locked.js', '/home.js',
+    '/theme.js', '/energy-orb.js', '/calendar-overlay.js'];
+  app.get(PUBLIC_FILES, (req, res) => {
     res.sendFile(req.path.slice(1), { root: PUBLIC_DIR });
+  });
+  app.get('/vendor/preact-htm.js', (_req, res) => {
+    res.sendFile(PREACT);
   });
 
   app.get('/login', async (req, res) => {
@@ -171,9 +177,6 @@ export function createApp(opts: HubOptions) {
   });
 
   app.use(express.static(PUBLIC_DIR, { index: false }));
-  app.get('/vendor/preact-htm.js', (_req, res) => {
-    res.sendFile(PREACT);
-  });
 
   app.get('/', (_req, res) => {
     res.type('html').send(renderPage(res.locals.email));

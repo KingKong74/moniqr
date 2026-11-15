@@ -14,7 +14,11 @@ const MESSAGES: Record<SignInFailure | 'signed-out', { tone: 'error' | 'info'; t
 export const isLoginMessage = (v: unknown): v is keyof typeof MESSAGES =>
   typeof v === 'string' && Object.hasOwn(MESSAGES, v);
 
-/** The moniqr sign-in page. No script: the security code is a plain form and Google is a link. */
+/**
+ * The signed-out page: Home in the design's locked state (public/locked.js), with the sign-in
+ * panel posting the security code to /login. It carries no data, only the sign-in options and any
+ * message. Without JavaScript, the plain sign-in card below does the same job.
+ */
 export function renderLogin(opts: { message?: keyof typeof MESSAGES; next?: string; passcode?: boolean; google?: boolean } = {}): string {
   const usePasscode = opts.passcode ?? false;
   const useGoogle = opts.google ?? !usePasscode;
@@ -30,10 +34,14 @@ export function renderLogin(opts: { message?: keyof typeof MESSAGES; next?: stri
   <title>Sign in · moniqr</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="/login.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/hq.css">
+  <noscript><link rel="stylesheet" href="/login.css"></noscript>
+  <script type="module" src="/locked.js"></script>
 </head>
 <body>
+  <div id="app" data-next="${esc(opts.next ?? '/')}" data-message="${esc(msg?.text ?? '')}" data-passcode="${usePasscode ? '1' : '0'}" data-google="${useGoogle ? '1' : '0'}" data-google-href="${esc(href)}"></div>
+  <noscript>
   <main class="shell">
     <section class="card" aria-labelledby="title">
       <div class="brand">
@@ -64,6 +72,7 @@ export function renderLogin(opts: { message?: keyof typeof MESSAGES; next?: stri
     </section>
     <footer class="foot">© moniqr</footer>
   </main>
+  </noscript>
 </body>
 </html>`;
 }

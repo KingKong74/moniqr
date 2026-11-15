@@ -6,7 +6,9 @@ The moniqr web app at the root of moniqr.com. It opens on **Home**, the landing 
 
 Home greets Bailey over an animated backdrop (silk night in dark mode, warm sunrise in light mode) with the energy orb (`public/energy-orb.js`, a canvas sphere you can drag to turn). Today's items orbit it: today's brief, today's Google Calendar events and dated Moniqr calendar requests, all live. Clicking an item shows its details, ←/→ step through them and the orb or *Read today's list* opens the day as a list. The brief and *Waiting on you* cards open the briefing and Action review in HQ. Home never approves anything; a request's **Review** button opens it in Action review.
 
-The whole app follows the design system's colours: cream and paper with a peach action colour in light mode, indigo night with a violet action colour in dark mode, and an indigo sidebar in both. It starts from the device setting; the sun/moon button (or the moniqr logo on Home) switches, and the choice is remembered in that browser. The login page follows the device setting.
+The whole app follows the design system's colours: cream and paper with a peach action colour in light mode, indigo night with a violet action colour in dark mode, and an indigo sidebar in both. It starts from the device setting; clicking the moniqr logo (on Home or in the sidebar) switches, and the choice is remembered in that browser. Moving between Home and the other pages animates with the View Transitions API where the browser supports it (Home zooms and blurs away), and not at all with reduced motion.
+
+Signed out, `/login` is Home in the design's locked state (`public/locked.js`): the same backdrop and orb, but the tabs read `****`, the cards and orb items are redacted bars, and every control opens the sign-in panel. It loads no data; the page's code, styles and icons are the only open files, and the app script (`hq.js`) and everything under `/api/` still need a session. Without JavaScript a plain sign-in card does the same job.
 
 ## HQ
 
@@ -40,7 +42,7 @@ moniqr.com has its own sign-in page at `/login`, with no Cloudflare Access in fr
 
 Either way the hub sets a 30-day `__Host-moniqr_session` cookie (HttpOnly, Secure, SameSite=Lax), signed with `HUB_SESSION_SECRET`. Every request re-checks the allow list, so removing an email locks it out, and rotating the secret signs everyone out. **Sign out** in the top bar clears the cookie.
 
-Pages opened without a session redirect to `/login` and return to the same page after sign-in. Data requests get a 401, and HQ reloads to the login page. `/health`, `/login`, `/login.css`, the brand icons and the Google callback are the only open routes. The security code, run requests, finding and action decisions, and sign-out accept only posts whose `Origin` is the hub itself. Scripts and images load only from the hub, the login page has no script, and the one third party is Google Fonts for Barlow.
+Pages opened without a session redirect to `/login` and return to the same page after sign-in. Data requests get a 401, and HQ reloads to the login page. `/health`, `/login`, `/login.css`, the signed-out page's files (`locked.js`, `home.js`, `theme.js`, `energy-orb.js`, `calendar-overlay.js`, `hq.css`, Preact and the brand icons) and the Google callback are the only open routes. The security code, run requests, finding and action decisions, and sign-out accept only posts whose `Origin` is the hub itself. Scripts and images load only from the hub, nothing runs inline, and the one third party is Google Fonts for Barlow.
 
 Cloudflare Access doesn't cover moniqr.com or www. It still protects the other subdomains, such as finance.moniqr.com, which don't use this login.
 
