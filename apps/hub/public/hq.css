@@ -456,7 +456,8 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 .home-google { text-align: center; font-size: 14px; padding: 10px; border-radius: 999px; color: var(--ink) !important; background: var(--soft-btn); }
 @keyframes popIn { from { opacity: 0; transform: translate(-50%, -46%) scale(.97); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 
-/* — Moving between pages (View Transitions, where the browser has them). Going out from Home,
+/* — Moving between Home and another page (View Transitions, where the browser has them; other
+   page changes don't animate). Going out from Home,
    the new page expands as a circle from the top-left corner until it fills the screen. Coming
    back to Home, the page collapses into that corner, uncovering Home underneath. Either way the
    arriving page's sections then rise into place one after another. — */

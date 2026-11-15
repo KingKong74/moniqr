@@ -278,7 +278,8 @@ class App extends Component {
     const root = document.documentElement;
     const after = () => anchor && document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' });
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (view === from || reduced) return void swap().then(after);
+    // Only moves between Home and another page animate; switching among the other pages is instant.
+    if (view === from || reduced || (from !== 'home' && view !== 'home')) return void swap().then(after);
     // The new page's sections rise in one after another (hq.css, .arriving), under a circular reveal.
     // The class goes on only once the old page has been captured, so the old snapshot stays intact.
     const arrive = () => {
