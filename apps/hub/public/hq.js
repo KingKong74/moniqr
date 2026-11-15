@@ -275,15 +275,20 @@ class App extends Component {
       { view, ...(actionId ? { actionSel: actionId, actionFilter: 'all', actionHistory: null } : {}) },
       () => { window.scrollTo(0, 0); done(); },
     ));
+    const root = document.documentElement;
     const after = () => anchor && document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' });
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (view === from || reduced || !document.startViewTransition) return void swap().then(after);
-    // Home zooms and blurs away into the page; coming back, it settles in from behind.
-    const root = document.documentElement;
-    root.classList.toggle('leaving-home', from === 'home');
-    root.classList.toggle('entering-home', view === 'home');
-    const t = document.startViewTransition(swap);
-    t.finished.finally(() => { root.classList.remove('leaving-home', 'entering-home'); after(); });
+    if (view === from || reduced) return void swap().then(after);
+    // The new page's sections rise in one after another (hq.css, .arriving), under a diagonal wipe.
+    // The class goes on only once the old page has been captured, so the old snapshot stays intact.
+    const arrive = () => {
+      clearTimeout(this.arriving);
+      root.classList.add('arriving');
+      this.arriving = setTimeout(() => root.classList.remove('arriving'), 1400);
+      return swap();
+    };
+    if (!document.startViewTransition) return void arrive().then(after);
+    document.startViewTransition(arrive).finished.finally(after);
   };
 
   toggleTheme = () => {
