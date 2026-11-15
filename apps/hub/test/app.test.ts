@@ -222,8 +222,10 @@ test('the signed-out page loads without a session, but the app and its data don\
     assert.equal(res.status, 200, path);
     assert.equal(res.headers.get('content-type'), 'image/png');
   }
-  for (const path of ['/locked.js', '/home.js', '/theme.js', '/energy-orb.js', '/calendar-overlay.js', '/hq.css', '/vendor/preact-htm.js']) {
-    assert.equal((await get(path)).status, 200, `${path} is part of the signed-out page`);
+  for (const path of ['/locked.js', '/home.js', '/theme.js', '/energy-orb.js', '/calendar-overlay.js', '/hq.css', '/vendor/preact-htm.js', '/login.css']) {
+    const res = await get(path);
+    assert.equal(res.status, 200, `${path} is part of the signed-out page`);
+    assert.equal(res.headers.get('cache-control'), 'no-store', `${path} must not be cached by Cloudflare across deploys`);
   }
   for (const path of ['/hq.js', '/dashboard-mocks.js', '/api/hq']) {
     assert.equal((await get(path, { accept: 'application/json' })).status, 401, `${path} needs a session`);

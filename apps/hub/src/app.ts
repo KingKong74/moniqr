@@ -9,6 +9,9 @@ import { hqData, renderPage } from './page.js';
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 // Preact, its hooks and htm in one ES module, so the browser needs no build step or import map.
 const PREACT = fileURLToPath(import.meta.resolve('htm/preact/standalone'));
+// Keeps the hub's `no-store` header on files. Otherwise Express marks them cacheable and Cloudflare
+// holds the open ones (stylesheets, scripts) for hours after a deploy.
+const NO_CACHE = { cacheControl: false, etag: true } as const;
 
 /** The security code and/or Google sign-in with session cookies, or local development signed in as one email. */
 export type HubAuth =
@@ -83,7 +86,7 @@ export function createApp(opts: HubOptions) {
     auth.mode === 'dev' ? auth.email : auth.sessions.read(readCookie(req, SESSION));
 
   app.get('/login.css', (_req, res) => {
-    res.sendFile('login.css', { root: PUBLIC_DIR });
+    res.sendFile('login.css', { root: PUBLIC_DIR, ...NO_CACHE });
   });
 
   // The signed-out page is Home in its locked state, so its code, styles and icons are open.
@@ -91,10 +94,10 @@ export function createApp(opts: HubOptions) {
   const PUBLIC_FILES = ['/assets/moniqr-icon-dark.png', '/assets/moniqr-icon-light.png', '/hq.css', '/locked.js', '/home.js',
     '/theme.js', '/energy-orb.js', '/calendar-overlay.js'];
   app.get(PUBLIC_FILES, (req, res) => {
-    res.sendFile(req.path.slice(1), { root: PUBLIC_DIR });
+    res.sendFile(req.path.slice(1), { root: PUBLIC_DIR, ...NO_CACHE });
   });
   app.get('/vendor/preact-htm.js', (_req, res) => {
-    res.sendFile(PREACT);
+    res.sendFile(PREACT, NO_CACHE);
   });
 
   app.get('/login', async (req, res) => {
@@ -176,7 +179,7 @@ export function createApp(opts: HubOptions) {
     res.status(401).json({ error: 'Sign in at /login.' });
   });
 
-  app.use(express.static(PUBLIC_DIR, { index: false }));
+  app.use(express.static(PUBLIC_DIR, { index: false, ...NO_CACHE }));
 
   app.get('/', (_req, res) => {
     res.type('html').send(renderPage(res.locals.email));
