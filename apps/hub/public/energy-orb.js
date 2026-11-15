@@ -54,7 +54,7 @@
       const target = this.getAttribute('mode') === 'blue' ? 1 : 0;
       this._mix += (target - this._mix) * 0.08;
       const P = {}; for (const k in PAL.orange) P[k] = mixc(PAL.orange[k], PAL.blue[k], this._mix);
-      const ctx = this._ctx, W = this._c.width, H = this._c.height, cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.34, t = this._t, dpr = this._dpr;
+      const ctx = this._ctx, W = this._c.width, H = this._c.height, cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.32, t = this._t, dpr = this._dpr;
       const [mx, my] = this._mouse, md = Math.hypot(mx - cx, my - cy);
       this._hover += ((md < R * 1.35 ? 1 : 0) - this._hover) * 0.08;
       const hv = this._hover, rot = t * 0.12 + (+this.getAttribute('yaw') || 0), tilt = 0.38 + (+this.getAttribute('pitch') || 0), cr = Math.cos(rot), sr = Math.sin(rot), ct = Math.cos(tilt), st = Math.sin(tilt);
@@ -65,7 +65,8 @@
       };
       ctx.clearRect(0, 0, W, H);
       // outer glow
-      let g = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 1.6);
+      // The glow fades out before the canvas edge, so the canvas never shows as a box.
+      let g = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, Math.min(R * 1.6, Math.min(W, H) / 2));
       g.addColorStop(0, rgba(P.glow, 0.34)); g.addColorStop(0.45, rgba(P.glow, 0.1)); g.addColorStop(1, rgba(P.glow, 0));
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       // body

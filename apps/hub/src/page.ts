@@ -3,10 +3,19 @@ import { LINKS } from './links.js';
 import { escapeHtml as esc, renderMarkdown } from './markdown.js';
 import { MOCK } from './mock.js';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
-/** hq.css's URL with a hash of its contents, so a deploy never meets a stale cached copy. */
-export const HQ_CSS = `/hq.css?v=${createHash('sha256').update(readFileSync(new URL('../public/hq.css', import.meta.url))).digest('hex').slice(0, 10)}`;
+/**
+ * Where the page's own scripts and styles are served: /v/<hash of their contents>/. Relative
+ * imports inside the scripts inherit the prefix, so each deploy gets fresh URLs that no cache
+ * (Cloudflare's or the browser's) has seen.
+ */
+const PUBLIC = new URL('../public/', import.meta.url);
+export const ASSET_BASE = (() => {
+  const hash = createHash('sha256');
+  for (const f of readdirSync(PUBLIC).filter((f) => /\.(js|css)$/.test(f)).sort()) hash.update(f).update(readFileSync(new URL(f, PUBLIC)));
+  return `/v/${hash.digest('hex').slice(0, 10)}`;
+})();
 
 const parts = new Intl.DateTimeFormat('en-AU', {
   timeZone: 'Australia/Brisbane',
@@ -93,8 +102,8 @@ export function renderPage(email: string): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="${HQ_CSS}">
-  <script type="module" src="/hq.js"></script>
+  <link rel="stylesheet" href="${ASSET_BASE}/hq.css">
+  <script type="module" src="${ASSET_BASE}/hq.js"></script>
 </head>
 <body>
   <div id="app"><p class="boot">Loading moniqr for ${esc(email)}…</p></div>

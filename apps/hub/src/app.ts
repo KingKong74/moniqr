@@ -96,6 +96,11 @@ export function createApp(opts: HubOptions) {
   app.get(PUBLIC_FILES, (req, res) => {
     res.sendFile(req.path.slice(1), { root: PUBLIC_DIR, ...NO_CACHE });
   });
+  // The same files under a versioned prefix (see ASSET_BASE). Only the public ones skip the session check.
+  app.get('/v/:ver/:file', (req, res, next) => {
+    if (!PUBLIC_FILES.includes(`/${req.params.file}`)) return next();
+    res.sendFile(req.params.file, { root: PUBLIC_DIR, ...NO_CACHE });
+  });
   app.get('/vendor/preact-htm.js', (_req, res) => {
     res.sendFile(PREACT, NO_CACHE);
   });
@@ -180,6 +185,7 @@ export function createApp(opts: HubOptions) {
   });
 
   app.use(express.static(PUBLIC_DIR, { index: false, ...NO_CACHE }));
+  app.use('/v/:ver', express.static(PUBLIC_DIR, { index: false, ...NO_CACHE }));
 
   app.get('/', (_req, res) => {
     res.type('html').send(renderPage(res.locals.email));

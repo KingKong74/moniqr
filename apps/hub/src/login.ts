@@ -1,6 +1,6 @@
 import type { SignInFailure } from './auth.js';
 import { escapeHtml as esc } from './markdown.js';
-import { HQ_CSS } from './page.js';
+import { ASSET_BASE } from './page.js';
 
 const MESSAGES: Record<SignInFailure | 'signed-out', { tone: 'error' | 'info'; text: string }> = {
   denied: { tone: 'error', text: 'That Google account doesn’t have access to moniqr. Try a different account.' },
@@ -36,9 +36,9 @@ export function renderLogin(opts: { message?: keyof typeof MESSAGES; next?: stri
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="${HQ_CSS}">
+  <link rel="stylesheet" href="${ASSET_BASE}/hq.css">
   <noscript><link rel="stylesheet" href="/login.css"></noscript>
-  <script type="module" src="/locked.js"></script>
+  <script type="module" src="${ASSET_BASE}/locked.js"></script>
 </head>
 <body>
   <div id="app" data-next="${esc(opts.next ?? '/')}" data-message="${esc(msg?.text ?? '')}" data-passcode="${usePasscode ? '1' : '0'}" data-google="${useGoogle ? '1' : '0'}" data-google-href="${esc(href)}"></div>

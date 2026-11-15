@@ -125,7 +125,9 @@ test('the login page is public, is Home in its locked state and offers both sign
   const res = await get('/login?next=%2Fruns&error=denied');
   assert.equal(res.status, 200);
   const page = await res.text();
-  assert.deepEqual(page.match(/<script[^>]*>/g), ['<script type="module" src="/locked.js">'], 'one script, from the hub, nothing inline');
+  const scripts = page.match(/<script[^>]*>/g) ?? [];
+  assert.equal(scripts.length, 1, 'one script, from the hub, nothing inline');
+  assert.match(scripts[0]!, /^<script type="module" src="\/v\/[0-9a-f]{10}\/locked\.js">$/);
   assert.ok(page.includes('data-next="/runs"') && page.includes('data-passcode="1"') && page.includes('data-google="1"'));
   assert.ok(page.includes('href="/login/google?next=%2Fruns"'));
   assert.ok(page.includes('action="/login"') && page.includes('name="passcode"'));
@@ -208,7 +210,12 @@ test('the page shell loads its script and styles from the hub only', async () =>
   assert.match(csp, /default-src 'none'/);
   assert.match(csp, /script-src 'self'(;|$)/);
   const html = await res.text();
-  assert.ok(html.includes('src="/hq.js"'));
+  const base = html.match(/src="(\/v\/[0-9a-f]{10})\/hq\.js"/)?.[1];
+  assert.ok(base, 'the app script is served under a versioned prefix');
+  assert.ok(html.includes(`href="${base}/hq.css"`));
+  assert.equal((await get(`${base}/hq.js`, authed)).status, 200);
+  assert.equal((await get(`${base}/hq.js`, { accept: 'application/json' })).status, 401, 'versioned app script still needs a session');
+  assert.equal((await get(`${base}/home.js`)).status, 200, 'versioned signed-out files stay open');
   assert.ok(html.includes('bailey@example.com'));
   assert.match(csp, /img-src 'self'(;|$)/);
   for (const path of ['/hq.js', '/hq.css', '/home.js', '/energy-orb.js', '/vendor/preact-htm.js']) {
