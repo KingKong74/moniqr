@@ -2,6 +2,11 @@ import type { Brief, RunSummary, CalendarData, FindingsData, ActionsData } from 
 import { LINKS } from './links.js';
 import { escapeHtml as esc, renderMarkdown } from './markdown.js';
 import { MOCK } from './mock.js';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+/** hq.css's URL with a hash of its contents, so a deploy never meets a stale cached copy. */
+export const HQ_CSS = `/hq.css?v=${createHash('sha256').update(readFileSync(new URL('../public/hq.css', import.meta.url))).digest('hex').slice(0, 10)}`;
 
 const parts = new Intl.DateTimeFormat('en-AU', {
   timeZone: 'Australia/Brisbane',
@@ -88,7 +93,7 @@ export function renderPage(email: string): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="/hq.css">
+  <link rel="stylesheet" href="${HQ_CSS}">
   <script type="module" src="/hq.js"></script>
 </head>
 <body>
