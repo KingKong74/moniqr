@@ -7,11 +7,13 @@ import { googleAccessToken, type GoogleCredentials } from './google.js';
 
 export interface EventSpec {
   id: string; title: string; start: string; end: string; location: string;
+  /** A reminder: an all-day, free entry on the date of `start`, with alerts beforehand. */
+  allDay?: boolean;
   tags: Record<string, string>;
 }
 export interface ProviderEvent {
   id: string; status?: string; etag?: string; summary?: string; location?: string;
-  start?: { dateTime?: string }; end?: { dateTime?: string };
+  start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string };
   attendees?: unknown[]; extendedProperties?: { private?: Record<string, string> };
 }
 export interface CalendarWriter {
@@ -34,8 +36,10 @@ export function matchesEvent(event: ProviderEvent, spec: EventSpec) {
   return event.id === spec.id && event.status !== 'cancelled' &&
     Object.entries(spec.tags).every(([k, v]) => event.extendedProperties?.private?.[k] === v) &&
     event.summary === spec.title && (event.location ?? '') === spec.location && !event.attendees?.length &&
-    Date.parse(event.start?.dateTime ?? '') === Date.parse(spec.start) &&
-    Date.parse(event.end?.dateTime ?? '') === Date.parse(spec.end);
+    (spec.allDay
+      ? event.start?.date === spec.start.slice(0, 10) && event.end?.date === spec.end.slice(0, 10)
+      : Date.parse(event.start?.dateTime ?? '') === Date.parse(spec.start) &&
+        Date.parse(event.end?.dateTime ?? '') === Date.parse(spec.end));
 }
 
 export function calendarWriter(creds: GoogleCredentials, calendarId: string, fetchImpl: typeof fetch = fetch): CalendarWriter {
@@ -62,11 +66,19 @@ export function calendarWriter(creds: GoogleCredentials, calendarId: string, fet
     async create(spec) {
       const r = await request('POST', '?sendUpdates=none', {
         id: spec.id, summary: spec.title, location: spec.location,
-        start: { dateTime: spec.start, timeZone: 'Australia/Brisbane' },
-        end: { dateTime: spec.end, timeZone: 'Australia/Brisbane' },
+        ...(spec.allDay ? {
+          // Spec times are Brisbane midnights, so their date part is the Brisbane day; end is exclusive.
+          start: { date: spec.start.slice(0, 10) }, end: { date: spec.end.slice(0, 10) }, transparency: 'transparent',
+          // All-day alerts count back from midnight: 9am three days before and 9am the day before.
+          reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 3 * 1440 - 540 }, { method: 'popup', minutes: 900 }] },
+        } : {
+          start: { dateTime: spec.start, timeZone: 'Australia/Brisbane' },
+          end: { dateTime: spec.end, timeZone: 'Australia/Brisbane' },
+          reminders: { useDefault: true },
+        }),
         extendedProperties: { private: spec.tags },
         description: 'Created by Moniqr after review. Manage its proposal in the Moniqr dashboard.',
-        visibility: 'private', reminders: { useDefault: false },
+        visibility: 'private',
       });
       if (!r.ok) throw new CalendarProviderError(r.status);
       try { return await r.json() as ProviderEvent; } catch { throw new CalendarProviderError(null); }

@@ -47,6 +47,29 @@ const FOCUS_LABELS = { pri: 'priorities', news: 'news', mood: 'mood', pick: 'dai
 const on = (bg, fg = 'var(--n100)') => `background: ${bg}; color: ${fg};`;
 const choice = (active) => (active ? on('var(--accent)') : on('color-mix(in srgb, var(--n100) 5%, transparent)', 'var(--n300)'));
 
+const pad2 = (n) => String(n).padStart(2, '0');
+/** Best-effort prefill from quoted email wording ("24 November 2026", "Fri 21 Nov at 7pm").
+ * Only a starting point: Bailey always sees and confirms the date and time before anything is added. */
+function guessWhen(text) {
+  if (!text) return null;
+  const m = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?(?:\s+(\d{4}))?/i)
+    ?? text.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  if (!m) return null;
+  const day = Number(m[1]), month = Number.isNaN(Number(m[2])) ? MONTHS.findIndex((x) => x.toLowerCase() === m[2].slice(0, 3).toLowerCase()) : Number(m[2]) - 1;
+  const today = new Date(Date.now() + 10 * 3_600_000);
+  let year = m[3] ? Number(m[3]) : today.getUTCFullYear();
+  if (!m[3] && Date.UTC(year, month, day) < Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())) year++;
+  const d = new Date(Date.UTC(year, month, day));
+  if (d.getUTCMonth() !== month || d.getUTCDate() !== day) return null;
+  const out = { date: `${year}-${pad2(month + 1)}-${pad2(day)}` };
+  const t = text.match(/\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)\b/i) ?? text.match(/\b([01]?\d|2[0-3]):(\d{2})\b/);
+  if (t) {
+    const h = (Number(t[1]) % (t[3] ? 12 : 24)) + (t[3]?.toLowerCase() === 'pm' ? 12 : 0), min = Number(t[2] ?? 0);
+    if (h < 24 && min < 60) Object.assign(out, { start: `${pad2(h)}:${pad2(min)}`, end: `${pad2(Math.min(h + 1, 23))}:${pad2(h >= 23 ? 59 : min)}` });
+  }
+  return out;
+}
+
 class App extends Component {
   state = {
     data: null,
@@ -1060,6 +1083,85 @@ class App extends Component {
     finally { this.setState({ findingSaving: false }); }
   }
 
+  openCalendarForm(f, actions) {
+    const cal = actions?.items.find((a) => a.finding_id === f.id && a.kind === 'calendar_create' && a.proposed_action?.calendar?.start)?.proposed_action.calendar;
+    const type = cal?.type ?? (f.category === 'commitment' ? 'event' : 'reminder');
+    const wall = (iso) => new Date(Date.parse(iso) + 10 * 3_600_000).toISOString(); // Brisbane wall-clock
+    const guess = cal ? null : guessWhen(f.deadline_text);
+    this.setState({ calError: '', calNotice: null, calForm: {
+      findingId: f.id, type, title: cal?.title ?? f.subject, date: cal ? wall(cal.start).slice(0, 10) : guess?.date ?? '', location: cal?.location ?? '',
+      start_time: cal && cal.type !== 'reminder' ? wall(cal.start).slice(11, 16) : guess?.start ?? '09:00',
+      end_time: cal?.end && cal.type !== 'reminder' ? wall(cal.end).slice(11, 16) : guess?.end ?? '10:00',
+    } });
+  }
+
+  async addToCalendar(f) {
+    const form = this.state.calForm;
+    if (this.state.calSaving || !form) return;
+    this.setState({ calSaving: true, calError: '' });
+    try {
+      const body = new URLSearchParams({ type: form.type, title: form.title, date: form.date, location: form.location });
+      if (form.type === 'event') { body.set('start_time', form.start_time); body.set('end_time', form.end_time); }
+      const r = await fetch(`/findings/${f.id}/calendar`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.issues?.[0]?.message ?? d.error ?? 'It could not be added to your calendar.');
+      this.setState({ calForm: null, calNotice: { id: f.id, text: d.action?.execution_status === 'succeeded'
+        ? `Added to your calendar as ${form.type === 'reminder' ? 'a reminder' : 'an event'}.` : this.calendarResult(d.action) } });
+    } catch (err) { this.setState({ calError: err.message }); }
+    finally { await this.load(); this.setState({ calSaving: false }); }
+  }
+
+  renderCalendarAdd(f, actions) {
+    const { calForm, calSaving, calError, calNotice, actionSaving, actionError } = this.state;
+    const notice = calNotice?.id === f.id && html`<span class="fs13 soft" role="status">${calNotice.text}</span>`;
+    const entry = actions?.items.find((a) => a.finding_id === f.id && a.kind === 'calendar_create'
+      && ['queued', 'executing', 'succeeded', 'uncertain', 'undo_uncertain'].includes(a.execution_status));
+    if (entry) {
+      const cal = entry.proposed_action?.calendar;
+      const reminder = cal?.type === 'reminder';
+      const day = cal?.start && new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'short', day: 'numeric', month: 'short',
+        ...(reminder ? {} : { hour: 'numeric', minute: '2-digit' }) }).format(new Date(cal.start));
+      return html`<div class="cal-add">
+        <span class="fs13 soft">${entry.execution_status === 'succeeded'
+          ? `On your calendar as ${reminder ? 'a reminder' : 'an event'}: “${cal?.title}”, ${day}.`
+          : 'Google has not confirmed this calendar entry yet. Check the result before trying again.'}</span>
+        <div class="row wrap">
+          ${['uncertain', 'executing'].includes(entry.execution_status) && html`<button class="btn btn-secondary sm" disabled=${actionSaving} onClick=${() => this.calendarOperation(entry, 'execute')}>Check result</button>`}
+          ${entry.can_undo && html`<button class="btn btn-ghost sm" disabled=${actionSaving} onClick=${() => this.calendarOperation(entry, 'undo')}>${entry.execution_status === 'undo_uncertain' ? 'Check undo' : 'Undo'}</button>`}
+        </div>
+        ${notice}${actionError && html`<span class="fs13 coral" role="alert">${actionError}</span>`}
+      </div>`;
+    }
+    if (!actions?.calendar_write_ready) return html`<span class="fs12 muted">Connect calendar write access to add findings to your calendar.</span>`;
+    if (calForm?.findingId !== f.id) {
+      return html`<div class="cal-add"><div class="row wrap"><button class="btn btn-secondary" onClick=${() => this.openCalendarForm(f, actions)}>Add to calendar</button></div>${notice}</div>`;
+    }
+    const set = (k) => (e) => this.setState((st) => ({ calForm: { ...st.calForm, [k]: e.currentTarget.value } }));
+    const reminder = calForm.type === 'reminder';
+    const ready = calForm.title.trim() && calForm.date && (reminder || (calForm.start_time && calForm.end_time));
+    return html`<form class="cal-add" onSubmit=${(e) => { e.preventDefault(); this.addToCalendar(f); }}>
+      <div class="filters" role="group" aria-label="Calendar entry type" style="align-self: flex-start;">
+        ${[['reminder', 'Reminder'], ['event', 'Event']].map(([id, label]) => html`<button type="button" class="btn btn-ghost sm" aria-pressed=${calForm.type === id}
+          style=${calForm.type === id ? on('var(--wash-8)') : ''} onClick=${() => this.setState((st) => ({ calForm: { ...st.calForm, type: id } }))}>${label}</button>`)}
+      </div>
+      <span class="fs12 muted">${reminder ? 'All day on the date and shown as free, with alerts at 9am three days before and the day before. Best for bills, due dates and reports.'
+        : 'A timed entry with your usual calendar alerts. Best for bookings and appointments.'}</span>
+      <label class="cal-field"><span>Title</span><input type="text" maxlength="200" required value=${calForm.title} onInput=${set('title')} /></label>
+      <div class="row wrap" style="gap: 10px;">
+        <label class="cal-field"><span>${reminder ? 'Due date' : 'Date'}</span><input type="date" required value=${calForm.date} onInput=${set('date')} /></label>
+        ${!reminder && html`<label class="cal-field"><span>Starts</span><input type="time" required value=${calForm.start_time} onInput=${set('start_time')} /></label>
+          <label class="cal-field"><span>Ends</span><input type="time" required value=${calForm.end_time} onInput=${set('end_time')} /></label>`}
+      </div>
+      ${!reminder && html`<label class="cal-field"><span>Location (optional)</span><input type="text" maxlength="500" value=${calForm.location} onInput=${set('location')} /></label>`}
+      <span class="fs12 muted">Brisbane time. Added to your main calendar with no guests; you can undo it here.</span>
+      ${calError && html`<span class="fs13 coral" role="alert">${calError}</span>`}
+      <div class="row wrap">
+        <button type="submit" class="btn btn-primary" disabled=${calSaving || !ready}>${calSaving ? 'Adding…' : reminder ? 'Add reminder' : 'Add event'}</button>
+        <button type="button" class="btn btn-ghost" disabled=${calSaving} onClick=${() => this.setState({ calForm: null, calError: '' })}>Cancel</button>
+      </div>
+    </form>`;
+  }
+
   renderInbox(v) {
     const { data, filter, sel, findingSaving, findingError } = this.state;
     const { items, scan, total } = data.findings;
@@ -1124,12 +1226,13 @@ class App extends Component {
               ${selected.missing_details.length > 0 && html`<div class="col"><span class="fs12 muted">Missing or uncertain</span>
                 <ul class="fs13 soft">${selected.missing_details.map((d) => html`<li>${d}</li>`)}</ul></div>`}
               <a class="fs13 steel" href=${`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(selected.thread_id)}`} target="_blank" rel="noopener noreferrer">Open source in Gmail ↗</a>
+              ${this.renderCalendarAdd(selected, data.actions)}
               <div class="row wrap">
                 ${selected.status !== 'reviewed' && html`<button class="btn btn-secondary" disabled=${findingSaving} onClick=${() => this.updateFinding(selected.id, 'reviewed')}>Mark reviewed</button>`}
                 ${selected.status !== 'dismissed' && html`<button class="btn btn-ghost" disabled=${findingSaving} onClick=${() => this.updateFinding(selected.id, 'dismissed')}>Dismiss</button>`}
                 ${selected.status !== 'new' && html`<button class="btn btn-ghost" disabled=${findingSaving} onClick=${() => this.updateFinding(selected.id, 'new')}>Mark new</button>`}
               </div>
-              <span class="fs12 muted">This updates Moniqr only. It does not change your email, pay a bill or create a calendar event.</span>
+              <span class="fs12 muted">Reviewed, dismissed and new update Moniqr only. They do not change your email or pay a bill.</span>
             </article>
           </div>`}
       </section>`;

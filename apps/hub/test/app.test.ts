@@ -15,8 +15,10 @@ const actionDecisions: unknown[] = [];
 const calendarOperations: unknown[] = [];
 let staleAction = false;
 
+const calendarAdds: any[] = [];
 const agents: AgentsClient = {
   calendarAction: async (id, operation, revision) => { calendarOperations.push({ id, operation, revision }); return { id } as any; },
+  addFindingToCalendar: async (id, entry) => { calendarAdds.push({ id, entry }); return { id: 9, execution_status: 'succeeded' } as any; },
   actions: async () => {
     if (failAgents) throw new Error('down');
     return { items: [], total: 0, pending: 0 };
@@ -362,6 +364,23 @@ test('calendar prepare, retry and undo require owner authentication, origin and 
     assert.equal((await send('revision=1',{...authed,origin:ORIGIN})).status,200);
   }
   assert.deepEqual(calendarOperations.splice(0).map((o:any)=>o.operation),['prepare','execute','undo']);
+});
+
+test('adding a finding to the calendar requires sign-in and same origin, and sends only the chosen fields', async () => {
+  const send = (body: Record<string, string>, headers: Record<string, string>) => fetch(`${base}/findings/4/calendar`, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body: new URLSearchParams(body),
+  });
+  const reminder = { type: 'reminder', title: 'Pay water bill', date: '2027-01-05', start_time: '09:00', end_time: '10:00' };
+  assert.equal((await send(reminder, { origin: ORIGIN })).status, 401);
+  assert.equal((await send(reminder, authed)).status, 403);
+  assert.equal((await send({ ...reminder, type: 'task' }, { ...authed, origin: ORIGIN })).status, 400);
+  assert.equal((await send({ ...reminder, title: '' }, { ...authed, origin: ORIGIN })).status, 400);
+  assert.equal((await send(reminder, { ...authed, origin: ORIGIN })).status, 200);
+  assert.equal((await send({ type: 'event', title: 'Dinner', date: '2027-01-05', start_time: '19:00', end_time: '21:00', location: 'Bar' }, { ...authed, origin: ORIGIN })).status, 200);
+  assert.deepEqual(calendarAdds.splice(0), [
+    { id: 4, entry: { type: 'reminder', title: 'Pay water bill', date: '2027-01-05', location: '' } },
+    { id: 4, entry: { type: 'event', title: 'Dinner', date: '2027-01-05', location: 'Bar', start_time: '19:00', end_time: '21:00' } },
+  ]);
 });
 
 const postLogin = (body: string, headers: Record<string, string> = { origin: ORIGIN }) =>

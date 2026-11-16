@@ -13,7 +13,7 @@ import {
 import { nextFireAfter } from '../scheduler.js';
 import { bearer, safeEqual } from '../tokens.js';
 import { findingInput, scanInput, listFindings, saveFinding, saveScan } from '../findings.js';
-import { proposalInput, decisionInput, proposeAction, listActions, getAction, decideAction, prepareCalendarAction } from '../actions.js';
+import { proposalInput, decisionInput, proposeAction, listActions, getAction, decideAction, prepareCalendarAction, addFindingToCalendar, ownerCalendarInput } from '../actions.js';
 import type { CalendarWriter } from '../calendar-writer.js';
 import { executeCalendarAction } from '../calendar-executor.js';
 import { adminContext } from '../brief-context.js';
@@ -99,6 +99,17 @@ export function createApp(opts: AppOptions) {
     );
     if (!rows[0]) throw new NotFoundError(`Finding ${id} not found`);
     res.json({ finding: rows[0] });
+  });
+
+  // Bailey's own "Add to calendar" from the inbox. The hub token is the owner; run tokens cannot reach this.
+  app.post('/findings/:id/calendar', hub, async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const input = ownerCalendarInput.parse(req.body);
+    if (!opts.calendarWriter || opts.actionCalendarId?.trim() !== opts.calendarWriter.calendarId) throw new ConflictError('Connect calendar write access first.');
+    const row = await addFindingToCalendar(pool, id, input, opts.calendarWriter.calendarId);
+    const action = await executeCalendarAction(pool, opts.calendarWriter, row.id, row.revision);
+    calendarCache = undefined;
+    res.json({ action });
   });
 
   app.get('/health', async (_req, res) => {

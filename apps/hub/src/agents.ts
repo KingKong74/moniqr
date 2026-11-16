@@ -80,9 +80,10 @@ export interface ActionProposal {
   decided_at: string | null;
   execution_status: string;
   execution_mode: 'record_only' | 'enabled';
+  origin?: 'ea' | 'owner';
   proposed_action: {
     instructions: string;
-    calendar: null | { title: string; start: string | null; end: string | null; timeZone: string; location: string };
+    calendar: null | { type?: 'event' | 'reminder'; title: string; start: string | null; end: string | null; timeZone: string; location: string };
     target_calendar: string | null;
     missing_details: string[];
   } | null;
@@ -99,6 +100,11 @@ export interface ActionProposal {
 }
 export interface ActionsData { items: ActionProposal[]; total: number; pending: number; demo_pending?: number; calendar_write_ready?: boolean; target_calendar?: string | null; }
 
+/** Brisbane wall-clock fields; a reminder is all-day, an event needs both times. */
+export interface CalendarEntryInput {
+  type: 'event' | 'reminder'; title: string; date: string; start_time?: string; end_time?: string; location?: string;
+}
+
 export class AgentApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -109,6 +115,7 @@ export interface AgentsClient {
   decideAction(id: number, decision: 'approved' | 'rejected', revision: number): Promise<ActionProposal | void>;
   calendarAction?(id: number, operation: 'prepare' | 'execute' | 'undo', revision: number): Promise<ActionProposal>;
   findings(): Promise<FindingsData>;
+  addFindingToCalendar?(id: number, entry: CalendarEntryInput): Promise<ActionProposal>;
   setFindingStatus(id: number, status: EmailFinding['status']): Promise<void>;
   calendar(): Promise<CalendarData>;
   latestBrief(): Promise<Brief | null>;
@@ -125,7 +132,7 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(path.startsWith('/actions/') && method === 'POST' ? 60_000 : path === '/calendar' ? 30_000 : 5000),
+      signal: AbortSignal.timeout(path.match(/^\/(actions|findings)\/\d+\/(decision|prepare|execute|undo|calendar)$/) && method === 'POST' ? 60_000 : path === '/calendar' ? 30_000 : 5000),
     });
     if (!res.ok) {
       const error = await res.json().catch(() => ({})) as { error?: string };
@@ -140,6 +147,7 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
     decideAction: async (id, decision, revision) => (await call<{ action: ActionProposal }>('POST', `/actions/${id}/decision`, { decision, revision })).action,
     calendarAction: async (id, operation, revision) => (await call<{ action: ActionProposal }>('POST', `/actions/${id}/${operation}`, { revision })).action,
     findings: () => call<FindingsData>('GET', '/findings'),
+    addFindingToCalendar: async (id, entry) => (await call<{ action: ActionProposal }>('POST', `/findings/${id}/calendar`, entry)).action,
     setFindingStatus: async (id, status) => { await call('PATCH', `/findings/${id}`, { status }); },
     calendar: () => call<CalendarData>('GET', '/calendar'),
     latestBrief: async () => (await call<{ brief: Brief | null }>('GET', '/briefs/latest')).brief,

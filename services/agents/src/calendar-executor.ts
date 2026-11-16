@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool } from './db.js';
 import type { PoolClient } from 'pg';
-import { actionView, audit, sourceSnapshot, stableJson, type ActionRow } from './actions.js';
+import { actionView, audit, calendarCutoff, sourceSnapshot, stableJson, type ActionRow } from './actions.js';
 import { ConflictError, NotFoundError } from './runs.js';
 import { CalendarProviderError, eventId, matchesEvent, type CalendarWriter, type EventSpec } from './calendar-writer.js';
 
@@ -44,6 +44,7 @@ export async function executeCalendarAction(pool: Pool, writer: CalendarWriter, 
     const instance = (await client.query("SELECT value FROM notes WHERE key='calendar_instance_id'")).rows[0].value;
     const spec: EventSpec = {
       id: eventId(instance, id, revision), title: cal.title, start: cal.start, end: cal.end, location: cal.location,
+      allDay: cal.type === 'reminder',
       tags: { moniqrInstance: instance, moniqrAction: String(id), moniqrRevision: String(revision), moniqrHash: row.payload_hash },
     };
     if (row.calendar_event_id && row.calendar_event_id !== spec.id) throw new ConflictError('The event identity does not match this proposal.');
@@ -74,7 +75,7 @@ export async function executeCalendarAction(pool: Pool, writer: CalendarWriter, 
     if (!f || f.status === 'dismissed' || stableJson(sourceSnapshot(f)) !== stableJson(row.source_snapshot)) {
       return finish('failed', 'The source changed or was dismissed. Generate and review a fresh proposal.');
     }
-    if (!row.expires_at || row.expires_at.getTime() <= Date.now() || Date.parse(cal.start) <= Date.now()) return finish('failed', 'The approval or proposed time expired. No event was created.');
+    if (!row.expires_at || row.expires_at.getTime() <= Date.now() || calendarCutoff(cal) <= Date.now()) return finish('failed', 'The approval or proposed time expired. No event was created.');
     row = (await client.query<ActionRow>(`UPDATE approvals SET execution_status='executing',
       calendar_event_id=$2,calendar_target_id=$3,updated_at=now() WHERE id=$1 RETURNING *`,
       [id, spec.id, writer.calendarId])).rows[0]!;

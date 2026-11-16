@@ -42,7 +42,7 @@ export async function adminContext(pool: Pool, opts: { actionCalendarId?: string
           WHERE s2.status='completed' AND r2.status='done') AS last_completed_at
       FROM email_scans s JOIN runs r ON r.id=s.run_id WHERE r.status <> 'running'
       ORDER BY s.run_id DESC LIMIT 1`),
-    pool.query(`SELECT id, kind, title, status, execution_mode, execution_status, execution_error, executed_at, decided_at,
+    pool.query(`SELECT id, kind, origin, title, status, execution_mode, execution_status, execution_error, executed_at, decided_at,
         proposed_action->'calendar' AS calendar, updated_at
       FROM approvals WHERE (source_snapshot->>'demo') IS DISTINCT FROM 'true'
         AND status IN ('approved','rejected') AND coalesce(executed_at, decided_at, updated_at) >= $1
@@ -76,6 +76,7 @@ export async function adminContext(pool: Pool, opts: { actionCalendarId?: string
     },
     recent_outcomes: outcomes.rows.map((o) => ({
       id: o.id, kind: o.kind, title: o.title, decision: o.status, execution_status: o.execution_status,
+      added_by: o.origin === 'owner' ? 'Bailey, from the inbox' : 'EA proposal, decided by Bailey',
       calendar: o.calendar, executed_at: o.executed_at, decided_at: o.decided_at,
       confirmed_created: o.kind === 'calendar_create' && o.execution_status === 'succeeded',
       meaning: outcomeMeaning(o.kind, o.execution_mode, o.status, o.execution_status),

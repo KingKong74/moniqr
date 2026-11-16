@@ -19,6 +19,8 @@ export const proposalShape = {
   detail: z.string().trim().min(1).max(2000).describe('Why this matters and why Bailey should review it'),
   instructions: z.string().trim().max(2000).default('').describe('Manual action Bailey would carry out; never an executed action'),
   calendar: z.object({
+    type: z.enum(['event', 'reminder']).optional()
+      .describe('reminder: an all-day, non-blocking entry with alerts beforehand, for bills, due dates and reports (start = 00:00 on the day, end = 00:00 the next day). event (default): a timed booking or appointment.'),
     title: z.string().trim().min(1).max(200),
     start: brisbaneTime.nullable().default(null),
     end: brisbaneTime.nullable().default(null),
@@ -34,7 +36,37 @@ export const proposalInput = z.object(proposalShape).strict().superRefine((v, ct
   if (v.calendar?.start && v.calendar.end && Date.parse(v.calendar.end) <= Date.parse(v.calendar.start)) {
     fail('Calendar end must be after start.');
   }
+  if (v.calendar?.type === 'reminder' && v.calendar.start && !isReminderDay(v.calendar.start, v.calendar.end)) {
+    fail('A reminder runs from 00:00 on its day to 00:00 the next day (Brisbane).');
+  }
 });
+const DAY_MS = 86_400_000;
+const isReminderDay = (start: string, end: string | null) =>
+  start.endsWith('T00:00:00+10:00') && !!end && Date.parse(end) - Date.parse(start) === DAY_MS;
+/** When a calendar entry stops being worth adding: a reminder stays useful all of its day. */
+export const calendarCutoff = (cal: { type?: string; start: string | null; end: string | null }) =>
+  Date.parse((cal.type === 'reminder' ? cal.end : cal.start) ?? '');
+
+/** Bailey adding a finding from the inbox. Dates and times are Brisbane wall-clock. */
+export const ownerCalendarInput = z.object({
+  type: z.enum(['event', 'reminder']),
+  title: z.string().trim().min(1).max(200),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  end_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  location: z.string().trim().max(500).default(''),
+}).strict().superRefine((v, ctx) => {
+  if (v.type === 'event' && (!v.start_time || !v.end_time)) ctx.addIssue({ code: 'custom', message: 'An event needs a start and end time.' });
+});
+export function ownerCalendarPayload(input: z.infer<typeof ownerCalendarInput>) {
+  const at = (date: string, time: string) => `${date}T${time}:00+10:00`;
+  const nextDay = new Date(Date.parse(`${input.date}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
+  const start = input.type === 'reminder' ? at(input.date, '00:00') : at(input.date, input.start_time!);
+  const end = input.type === 'reminder' ? at(nextDay, '00:00') : at(input.date, input.end_time!);
+  for (const t of [start, end]) if (!brisbaneTime.safeParse(t).success) throw new ConflictError('Choose a real date and time.');
+  if (Date.parse(end) <= Date.parse(start)) throw new ConflictError('The end time must be after the start time.');
+  return { type: input.type, title: input.title, start, end, timeZone: 'Australia/Brisbane' as const, location: input.location };
+}
 export const decisionInput = z.object({
   decision: z.enum(['approved', 'rejected']), revision: z.number().int().positive(),
 }).strict();
@@ -55,7 +87,7 @@ export interface ActionRow {
   id: number; finding_id: number | null; run_id: number; kind: Proposal['kind']; title: string; detail: string;
   proposed_action: { instructions: string; calendar: Proposal['calendar']; target_calendar: string | null; missing_details: string[] };
   source_snapshot: Record<string, any>; payload_hash: string; revision: number;
-  status: 'pending' | 'approved' | 'rejected' | 'expired'; execution_status: string; execution_mode: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired'; execution_status: string; execution_mode: string; origin?: 'ea' | 'owner';
   expires_at: Date | null; decided_at: Date | null; updated_at: Date;
   calendar_event_id?: string | null; calendar_target_id?: string | null; execution_error?: string | null; executed_at?: Date | null;
 }
@@ -88,7 +120,7 @@ export function actionView(row: ActionRow, findingStatus?: string, configuredTar
     if (!row.proposed_action?.target_calendar) missing.push('Choose the target calendar before approval.');
     else if (configuredTarget !== undefined && row.proposed_action.target_calendar !== configuredTarget) missing.push('The target calendar changed; this proposal needs to be refreshed.');
     if (!calendar?.start || !calendar.end) missing.push('Exact start and end times are required.');
-    if (calendar?.start && Date.parse(calendar.start) <= Date.now()) missing.push('The proposed start time has passed.');
+    if (calendar?.start && calendarCutoff(calendar) <= Date.now()) missing.push('The proposed start time has passed.');
   }
   return { ...row, blocked_reasons: [...new Set(missing)], can_approve: row.status === 'pending' && missing.length === 0,
     can_prepare: !demo && row.kind === 'calendar_create' && row.execution_mode === 'record_only' && executionEnabled &&
@@ -121,11 +153,13 @@ export async function proposeAction(pool: Pool, runId: number, input: Proposal, 
     const old = (await client.query<ActionRow>('SELECT * FROM approvals WHERE finding_id=$1 AND kind=$2 FOR UPDATE',
       [input.finding_id, input.kind])).rows[0];
     if (old?.execution_status === 'not_requested' && old.expires_at && old.expires_at.getTime() <= Date.now()) return actionView({ ...old, status: 'expired' }, f.status);
+    // Bailey already added this one from the inbox; a scan never overwrites it.
+    if (old?.origin === 'owner') return actionView(old, f.status, targetCalendar?.trim() || null, executionEnabled);
     // Terminal decisions never reopen on a scan. A repeat must not extend the expiry either.
     if (old && (old.payload_hash === hash || old.payload_hash === legacyHash || old.status === 'rejected' || old.status === 'expired')) return actionView(old, f.status, targetCalendar?.trim() || null, executionEnabled);
     if (old && !['not_requested','failed'].includes(old.execution_status)) throw new ConflictError('An executing or uncertain action cannot be revised.');
     const expiresAt = new Date(Math.min(Date.now() + 7 * 86_400_000,
-      input.calendar?.start ? Date.parse(input.calendar.start) : Infinity));
+      input.calendar?.start ? calendarCutoff(input.calendar) : Infinity));
     if (expiresAt.getTime() <= Date.now()) throw new ConflictError('The proposed calendar time has already passed.');
     let row: ActionRow;
     if (old) {
@@ -220,5 +254,41 @@ export async function decideAction(pool: Pool, id: number, decision: z.infer<typ
       WHERE id=$1 RETURNING *`, [id, decision.decision])).rows[0]!;
     await audit(client, updated, decision.decision, 'owner');
     return actionView(updated, source?.status, targetCalendar?.trim() || null, executionEnabled);
+  });
+}
+
+const LIVE_ENTRY = ['queued', 'executing', 'succeeded', 'uncertain', 'undo_uncertain'];
+
+/** Bailey's own "Add to calendar" from the inbox: recorded as an owner-approved, enabled
+ * calendar action so the executor's idempotency, tags and undo all apply unchanged.
+ */
+export async function addFindingToCalendar(pool: Pool, findingId: number, input: z.infer<typeof ownerCalendarInput>, target: string) {
+  const calendar = ownerCalendarPayload(input);
+  if (calendarCutoff(calendar) <= Date.now()) throw new ConflictError('That time has already passed.');
+  return withTransaction(pool, async (client) => {
+    await expire(client);
+    const f = (await client.query('SELECT * FROM email_findings WHERE id=$1 FOR UPDATE', [findingId])).rows[0];
+    if (!f) throw new NotFoundError('Finding not found.');
+    if (f.status === 'dismissed') throw new ConflictError('This finding was dismissed. Mark it new before adding it.');
+    const old = (await client.query<ActionRow>("SELECT * FROM approvals WHERE finding_id=$1 AND kind='calendar_create' FOR UPDATE", [findingId])).rows[0];
+    if (old && LIVE_ENTRY.includes(old.execution_status)) throw new ConflictError('This finding is already on your calendar. Undo that entry first.');
+    const title = `${input.type === 'reminder' ? 'Reminder' : 'Event'}: ${calendar.title}`;
+    const detail = 'Added by Bailey from the inbox.';
+    const payload = { instructions: '', calendar, target_calendar: target, missing_details: [] as string[] };
+    const source = sourceSnapshot(f);
+    const hash = reviewHash('calendar_create', title, detail, payload, source, 'enabled');
+    const expiresAt = new Date(calendarCutoff(calendar));
+    const row = old
+      ? (await client.query<ActionRow>(`UPDATE approvals SET title=$2,detail=$3,proposed_action=$4::jsonb,source_snapshot=$5::jsonb,
+          payload_hash=$6,revision=revision+1,status='approved',decided_at=now(),expires_at=$7,updated_at=now(),
+          execution_mode='enabled',execution_status='not_requested',execution_error=NULL,calendar_event_id=NULL,
+          calendar_target_id=NULL,origin='owner' WHERE id=$1 RETURNING *`,
+        [old.id, title, detail, JSON.stringify(payload), JSON.stringify(source), hash, expiresAt])).rows[0]!
+      : (await client.query<ActionRow>(`INSERT INTO approvals (run_id,finding_id,kind,title,detail,proposed_action,source_snapshot,
+          payload_hash,expires_at,risk,execution_mode,status,decided_at,origin)
+          VALUES (NULL,$1,'calendar_create',$2,$3,$4::jsonb,$5::jsonb,$6,$7,'low','enabled','approved',now(),'owner') RETURNING *`,
+        [findingId, title, detail, JSON.stringify(payload), JSON.stringify(source), hash, expiresAt])).rows[0]!;
+    await audit(client, row, 'owner_added', 'owner');
+    return row;
   });
 }

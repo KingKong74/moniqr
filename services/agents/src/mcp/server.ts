@@ -228,6 +228,7 @@ if (google) {
     title: 'Propose an action for owner review',
     description: 'Propose one manual or calendar_create action per finding/kind. The finding must have been saved in this run. ' +
       'Only propose when useful. Manual instructions are for Bailey to do himself. Calendar times must be explicit and unambiguous; use null and missing_details when unknown. ' +
+      'Bills, due dates and reports are type reminder (all-day on the stated date); bookings and appointments are type event. ' +
       'The target calendar and execution mode are server-selected. You cannot approve, execute or undo a proposal. ' +
       'Only an explicit owner approval of an enabled calendar proposal can create an event. No attendees, arbitrary calendars, messages or payments. ' + UNTRUSTED_MAIL,
     inputSchema: proposalShape,

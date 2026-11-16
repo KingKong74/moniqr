@@ -201,6 +201,11 @@ input::placeholder { color: var(--n500); }
 .mail-tag { font-size: 11px; padding: 1px 8px; border-radius: 9px; white-space: nowrap; }
 .reader { flex: 1.4 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; background: color-mix(in srgb, var(--n100) 3%, transparent); }
 .reader h3 { font-size: 20px; line-height: 1.3; }
+.cal-add { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: color-mix(in srgb, var(--n100) 4%, transparent); }
+.cal-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--n400); min-width: 0; }
+.row > .cal-field { flex: 1 1 140px; }
+.cal-field input { font: inherit; font-size: 14px; color: var(--n200); padding: 8px 10px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--n100) 12%, transparent); background: color-mix(in srgb, var(--n100) 5%, transparent); color-scheme: inherit; min-width: 0; }
+.cal-field input:focus-visible { border-color: var(--accent); outline: 0; }
 .avatar { width: 30px; height: 30px; border-radius: 50%; background: color-mix(in srgb, var(--n100) 10%, transparent); display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--n200); flex-shrink: 0; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
 .facts > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--wash-4); }

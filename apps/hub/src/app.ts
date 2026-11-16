@@ -252,6 +252,27 @@ export function createApp(opts: HubOptions) {
       }
     });
 
+  app.post('/findings/:id/calendar', express.urlencoded({ extended: false, limit: '2kb' }), async (req, res) => {
+    if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });
+    const id = Number(req.params.id);
+    const b = req.body ?? {};
+    const text = (k: string) => (typeof b[k] === 'string' ? b[k] : undefined);
+    if (!Number.isSafeInteger(id) || id <= 0 || !['event', 'reminder'].includes(text('type') ?? '') || !text('title') || !text('date')) {
+      return void res.status(400).json({ error: 'Choose reminder or event, a title and a date.' });
+    }
+    const reminder = text('type') === 'reminder';
+    try {
+      const action = await opts.agents.addFindingToCalendar!(id, {
+        type: reminder ? 'reminder' : 'event', title: text('title')!, date: text('date')!, location: text('location') ?? '',
+        ...(reminder ? {} : { start_time: text('start_time'), end_time: text('end_time') }),
+      });
+      res.json({ action });
+    } catch (err) {
+      if (err instanceof AgentApiError && [400, 404, 409].includes(err.status)) return void res.status(err.status).json({ error: err.message });
+      throw err;
+    }
+  });
+
   app.post('/findings/:id/status', express.urlencoded({ extended: false, limit: '1kb' }), async (req, res) => {
     if (req.header('origin') !== canonical.origin) return void res.status(403).send('Cross-site request refused.');
     const id = Number(req.params.id);
