@@ -77,6 +77,7 @@ class App extends Component {
     posting: false,
     now: Date.now(),
     view: 'home',
+    personalData: null, personalError: '', personalBusy: false, personalMessage: '', backlogFilter: 'open', backlogEdit: null,
     theme: document.documentElement.dataset.theme,
     projectFilter: 'All',
     chatOpen: false,
@@ -293,6 +294,8 @@ class App extends Component {
 
   /** Open a view, optionally scrolled to a section and with a proposal selected. */
   go = (view, anchor, actionId) => {
+    if (this.state.personalBusy) return;
+    if (view === 'backlog' || view === 'settings') this.loadPersonal(view);
     const from = this.state.view;
     const swap = () => new Promise((done) => this.setState(
       { view, ...(actionId ? { actionSel: actionId, actionFilter: 'all', actionHistory: null } : {}) },
@@ -348,13 +351,88 @@ class App extends Component {
           ${this.renderTopbar(v)}
           <div class="body">
             <div class="content">
-              ${this.state.view === 'hq' ? this.renderHq(v) : this.state.view === 'inbox' ? html`<main class="main">${this.renderInbox(v)}</main>` : this.state.view === 'projects' ? this.renderProjectDashboard() : this.state.view === 'finance' ? this.renderFinanceDashboard() : this.renderBriefing(v)}
+              ${this.state.view === 'hq' ? this.renderHq(v) : this.state.view === 'inbox' ? html`<main class="main">${this.renderInbox(v)}</main>` : this.state.view === 'backlog' ? this.renderBacklog() : this.state.view === 'settings' ? this.renderSettings() : this.state.view === 'projects' ? this.renderProjectDashboard() : this.state.view === 'finance' ? this.renderFinanceDashboard() : this.renderBriefing(v)}
             </div>
           </div>
         </div>
         ${chat}
       </div>
     `;
+  }
+
+  async loadPersonal(view) {
+    const seq = this.personalSeq = (this.personalSeq ?? 0) + 1;
+    this.setState({ personalData: null, personalError: '', personalMessage: '', backlogEdit: null });
+    try {
+      const r = await fetch(`/api/${view}`, { headers: { accept: 'application/json' } });
+      if (r.status === 401) return void location.assign('/login');
+      if (!r.ok) throw new Error('Could not load. Please try again.');
+      const data = await r.json();
+      if (seq === this.personalSeq) this.setState({ personalData: data });
+    } catch (e) { if (seq === this.personalSeq) this.setState({ personalError: e.message }); }
+  }
+
+  async savePersonal(event, path) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = new URLSearchParams(new FormData(form));
+    this.setState({ personalBusy: true, personalError: '', personalMessage: '' });
+    try {
+      const r = await fetch(path, { method: 'POST', headers: { accept: 'application/json' }, body });
+      if (r.status === 401) return void location.assign('/login');
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Could not save. Please try again.');
+      if (path === '/settings') this.setState({ personalData: data, personalMessage: 'Brief schedule saved.' });
+      else {
+        const result = await fetch('/api/backlog');
+        if (!result.ok) throw new Error('Saved, but the list could not refresh. Reopen Backlog.');
+        this.setState({ personalData: await result.json(), backlogEdit: null, personalMessage: 'Backlog saved.' });
+        if (path === '/backlog') form.reset();
+      }
+    } catch (e) { this.setState({ personalError: e.message }); }
+    finally { this.setState({ personalBusy: false }); }
+  }
+
+  personalNotice() {
+    return html`<div role="status" aria-live="polite">${this.state.personalError && html`<p class="coral">${this.state.personalError}</p>`}${this.state.personalMessage && html`<p class="soft">${this.state.personalMessage}</p>`}</div>`;
+  }
+
+  backlogForm(item) {
+    const busy = this.state.personalBusy;
+    return html`<form key=${item?.id ?? 'new'} class="col personal-form" onSubmit=${e => this.savePersonal(e, item ? `/backlog/${item.id}` : '/backlog')}>
+      <label class="col">Title<input class="field" name="title" required maxlength="240" value=${item?.title ?? ''} placeholder="An idea, a task, something to come back to…" /></label>
+      <label class="col">Notes<textarea class="field" name="notes" rows="3" maxlength="10000" value=${item?.notes ?? ''} placeholder="Any context you want to keep" /></label>
+      <div class="row wrap"><label class="col">Priority<select class="field" aria-label="Priority" name="priority" value=${item?.priority ?? 'normal'}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></label>
+      <label class="col">Status<select class="field" aria-label="Status" name="status" value=${item?.status ?? 'backlog'}>${[['backlog','Backlog'],['next','Next'],['doing','Doing'],['done','Done']].map(([id,label]) => html`<option value=${id}>${label}</option>`)}</select></label></div>
+      <div class="row wrap"><button class="btn btn-primary" disabled=${busy}>${busy ? 'Saving…' : item ? 'Save changes' : 'Add to backlog'}</button>${item && html`<button type="button" class="btn btn-secondary" disabled=${busy} onClick=${() => this.setState({ backlogEdit: null })}>Cancel</button>`}</div>
+    </form>`;
+  }
+
+  renderBacklog() {
+    const { personalData: data, backlogFilter, backlogEdit } = this.state;
+    const items = (data?.items ?? []).filter(i => backlogFilter === 'all' || (backlogFilter === 'done' ? i.status === 'done' : i.status !== 'done'));
+    return html`<main class="main personal-page"><div><span class="fs12 muted">PERSONAL</span><h1>Your backlog</h1><p class="soft">Capture it now. Decide what comes next when you have space.</p><p class="fs13 muted">The EA can read open items in your briefs and suggest priorities. You control what gets done.</p></div>
+      ${this.personalNotice()}
+      ${!data ? html`<p>${this.state.personalError ? 'Backlog unavailable.' : 'Loading backlog…'}</p><button class="btn btn-secondary" onClick=${() => this.loadPersonal('backlog')}>Retry</button>` : html`
+      <section class="tile panel"><h2>Get it out of your head</h2>${this.backlogForm(null)}</section>
+      <section class="col" style="gap: 14px;"><div class="row wrap"><h2 class="grow">${items.length} item${items.length === 1 ? '' : 's'}</h2>${[['open','Open'],['done','Done'],['all','All']].map(([id,label]) => html`<button class="btn sm btn-secondary" aria-pressed=${backlogFilter === id} onClick=${() => this.setState({ backlogFilter: id })}>${label}</button>`)}</div>
+      ${items.length ? items.map(item => html`<article class="tile panel" key=${item.id}>${backlogEdit === item.id ? this.backlogForm(item) : html`<div class="row wrap"><h2 class="grow">${item.title}</h2><button class="btn sm btn-secondary" disabled=${this.state.personalBusy} onClick=${() => this.setState({ backlogEdit: item.id })}>Edit</button></div><p class="fs12 muted">${{backlog:'Backlog',next:'Next',doing:'Doing',done:'Done'}[item.status]} · ${item.priority} priority</p>${item.notes && html`<p class="soft personal-notes">${item.notes}</p>`}`}</article>`) : html`<p class="muted">Nothing here yet. Add an idea above.</p>`}</section>`}
+    </main>`;
+  }
+
+  renderSettings() {
+    const data = this.state.personalData;
+    const schedule = kind => data?.schedules.find(s => s.kind === `${kind}_brief`);
+    const time = s => { const [m,h] = s.cron.split(' '); return `${pad(Number(h))}:${pad(Number(m))}`; };
+    const fmt = iso => new Intl.DateTimeFormat('en-AU', {timeZone:'Australia/Brisbane',weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(new Date(iso));
+    return html`<main class="main personal-page"><div><span class="fs12 muted">CONTROL PANEL</span><h1>Settings</h1><p class="soft">Make Moniqr fit your day.</p></div>${this.personalNotice()}
+      ${!data ? html`<p>${this.state.personalError ? 'Settings unavailable.' : 'Loading settings…'}</p><button class="btn btn-secondary" onClick=${() => this.loadPersonal('settings')}>Retry</button>` : html`
+      <section class="tile panel"><h2>Daily briefs</h2><p class="soft">A morning plan and an afternoon check-in. Every day, in Brisbane time (Australia/Brisbane).</p>
+      <form class="col personal-form" onSubmit=${e => this.savePersonal(e, '/settings')}>
+        ${['morning','afternoon'].map(slot => { const s = schedule(slot); return html`<fieldset class="brief-setting"><legend>${slot === 'morning' ? 'Morning brief' : 'Afternoon brief'}</legend><div class="row wrap"><label class="row"><input type="checkbox" name=${`${slot}_enabled`} checked=${s?.enabled ?? false} /> Enabled</label><label class="col">Time<input class="field" type="time" required name=${slot} value=${s ? time(s) : slot === 'morning' ? '07:00' : '16:30'} /></label></div><p class="fs13 muted">${s?.enabled ? s.next_run_at ? `Next: ${fmt(s.next_run_at)}` : 'Next run is being scheduled.' : 'Paused'}${s?.last_run_at ? ` · Last queued: ${fmt(s.last_run_at)}` : ''}</p></fieldset>`; })}
+        <p class="fs13 muted">Saving applies to future runs. It does not run a brief immediately.</p><button class="btn btn-primary" disabled=${this.state.personalBusy}>${this.state.personalBusy ? 'Saving…' : 'Save brief schedule'}</button>
+      </form></section><section class="tile panel"><h2>Personal backlog</h2><p class="soft">Keep ideas and tasks ready for your EA to help prioritise.</p><button class="btn btn-secondary" onClick=${() => this.go('backlog')}>Open backlog</button></section>`}
+    </main>`;
   }
 
   /** Values several sections share. */
@@ -424,6 +502,8 @@ class App extends Component {
       { label: 'Inbox', view: 'inbox', badge: v.unread || '', go: () => this.openView('inbox') },
       { label: 'Projects', view: 'projects', go: () => this.openView('projects') },
       { label: 'Finance', view: 'finance', go: () => this.openView('finance') },
+      { label: 'Backlog', view: 'backlog', go: () => this.openView('backlog') },
+      { label: 'Settings', view: 'settings', go: () => this.openView('settings') },
       { label: 'Knowledge' },
       { label: 'Agents' },
       { label: 'Life' },
@@ -479,7 +559,7 @@ class App extends Component {
     return html`
       <header class="topbar">
         <nav class="tabs" aria-label="Sections">
-          ${[['home', 'Home'], ['hq', 'HQ'], ['inbox', 'Inbox'], ['projects', 'Projects'], ['finance', 'Finance']].map(([id, label]) => html`<button type="button"
+          ${[['home', 'Home'], ['hq', 'HQ'], ['inbox', 'Inbox'], ['projects', 'Projects'], ['finance', 'Finance'], ['backlog', 'Backlog'], ['settings', 'Settings']].map(([id, label]) => html`<button type="button"
             class=${this.state.view === id || (id === 'hq' && this.state.view === 'briefing') ? 'on' : ''} aria-current=${this.state.view === id ? 'page' : null}
             onClick=${() => this.openView(id)}>${label}</button>`)}
         </nav>

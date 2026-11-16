@@ -27,13 +27,14 @@ describe('agent API', { skip: skipReason }, () => {
     return claimed.body as { run: { id: number }; agent: { slug: string }; runToken: string };
   };
 
-  test('seeds the EA with two disabled schedules, and migrating again is a no-op', async () => {
+  test('seeds the EA with two enabled daily briefs and a disabled weekly schedule, and migrating again is a no-op', async () => {
     const schedules = await api.call('GET', '/schedules', API_TOKEN);
     assert.deepEqual(
       schedules.body.schedules.map((s: any) => [s.agent, s.kind, s.enabled]),
       [
-        ['ea', 'morning_brief', false],
+        ['ea', 'morning_brief', true],
         ['ea', 'weekly_lookahead', false],
+        ['ea', 'afternoon_brief', true],
       ],
     );
     assert.deepEqual(await migrate(pool), []);

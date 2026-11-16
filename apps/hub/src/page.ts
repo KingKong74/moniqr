@@ -35,6 +35,7 @@ export function formatWhen(iso: string): string {
 
 const KIND_LABELS: Record<string, string> = {
   morning_brief: 'Morning brief',
+  afternoon_brief: 'Afternoon brief',
   weekly_lookahead: 'Weekly look-ahead',
   test: 'Plumbing test',
 };

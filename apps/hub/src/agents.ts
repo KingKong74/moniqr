@@ -1,6 +1,6 @@
 /** The slice of the agent API the hub uses. Every call carries the hub's API token. */
 
-export const RUN_KINDS = ['morning_brief', 'test'] as const;
+export const RUN_KINDS = ['morning_brief', 'afternoon_brief', 'test'] as const;
 export type RunKind = (typeof RUN_KINDS)[number];
 
 export interface Brief {
@@ -109,7 +109,23 @@ export class AgentApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
+export interface BacklogItem {
+  id: number; title: string; notes: string;
+  status: 'backlog' | 'next' | 'doing' | 'done'; priority: 'low' | 'normal' | 'high';
+}
+export interface BriefSettings {
+  timezone: string;
+  schedules: { kind: string; cron: string; enabled: boolean; timezone: string; next_run_at: string | null; last_run_at: string | null }[];
+}
+export interface BriefSettingsInput {
+  morning: string; afternoon: string; morning_enabled: boolean; afternoon_enabled: boolean;
+}
+
 export interface AgentsClient {
+  backlog?(): Promise<{ items: BacklogItem[] }>;
+  saveBacklog?(item: Omit<BacklogItem, 'id'>, id?: number): Promise<{ item: BacklogItem }>;
+  settings?(): Promise<BriefSettings>;
+  saveSettings?(settings: BriefSettingsInput): Promise<BriefSettings>;
   actions(): Promise<ActionsData>;
   actionDetail(id: number): Promise<{ action: ActionProposal; events: { id: number; revision: number; event_type: string; actor: string; created_at: string }[] }>;
   decideAction(id: number, decision: 'approved' | 'rejected', revision: number): Promise<ActionProposal | void>;
@@ -142,6 +158,10 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
   };
 
   return {
+    backlog: () => call('GET', '/backlog'),
+    saveBacklog: (item, id) => call(id ? 'PATCH' : 'POST', id ? `/backlog/${id}` : '/backlog', item),
+    settings: () => call('GET', '/settings'),
+    saveSettings: (settings) => call('PUT', '/settings', settings),
     actions: () => call<ActionsData>('GET', '/actions'),
     actionDetail: (id) => call('GET', `/actions/${id}`),
     decideAction: async (id, decision, revision) => (await call<{ action: ActionProposal }>('POST', `/actions/${id}/decision`, { decision, revision })).action,

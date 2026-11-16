@@ -16,7 +16,12 @@ const calendarOperations: unknown[] = [];
 let staleAction = false;
 
 const calendarAdds: any[] = [];
+const personalWrites: unknown[] = [];
 const agents: AgentsClient = {
+  backlog: async () => ({ items: [] }),
+  saveBacklog: async (item, id) => { personalWrites.push({ item, id }); return { item: { ...item, id: id ?? 1 } }; },
+  settings: async () => ({ timezone: 'Australia/Brisbane', schedules: [] }),
+  saveSettings: async settings => { personalWrites.push(settings); return { timezone: 'Australia/Brisbane', schedules: [] }; },
   calendarAction: async (id, operation, revision) => { calendarOperations.push({ id, operation, revision }); return { id } as any; },
   addFindingToCalendar: async (id, entry) => { calendarAdds.push({ id, entry }); return { id: 9, execution_status: 'succeeded' } as any; },
   actions: async () => {
@@ -411,4 +416,22 @@ test('wrong codes are refused, and a client is locked out after too many', async
   assert.equal(locked.headers.get('location'), '/login?error=locked', 'even the right code waits out the lockout');
   assert.match(await (await get('/login?error=locked')).text(), /Too many wrong codes/);
   assert.equal((await postLogin(`passcode=${CODE}`, { origin: ORIGIN, 'cf-connecting-ip': '198.51.100.2' })).headers.get('location'), '/');
+});
+
+
+test('backlog and settings require a session and same-origin writes', async () => {
+  for (const path of ['/api/backlog', '/api/settings']) {
+    assert.equal((await get(path)).status, 401);
+    assert.equal((await get(path, authed)).status, 200);
+  }
+  for (const path of ['/backlog', '/backlog/1', '/settings']) {
+    assert.equal((await fetch(base + path, { method: 'POST', headers: authed })).status, 403);
+    assert.equal((await fetch(base + path, { method: 'POST', headers: {origin:ORIGIN} })).status, 401);
+  }
+  let r = await fetch(base + '/backlog', {method:'POST',headers:{...authed,origin:ORIGIN},body:new URLSearchParams({title:'Chatbot',notes:'Later',status:'backlog',priority:'normal'})});
+  assert.equal(r.status, 200);
+  assert.deepEqual(personalWrites.at(-1), {item:{title:'Chatbot',notes:'Later',status:'backlog',priority:'normal'},id:undefined});
+  r = await fetch(base + '/settings', {method:'POST',headers:{...authed,origin:ORIGIN},body:new URLSearchParams({morning:'07:00',afternoon:'16:30',morning_enabled:'on'})});
+  assert.equal(r.status, 200);
+  assert.deepEqual(personalWrites.at(-1), {morning:'07:00',afternoon:'16:30',morning_enabled:true,afternoon_enabled:false});
 });

@@ -8,7 +8,12 @@ describe('scheduler', { skip: skipReason }, () => {
   let pool: Pool;
   let drop: () => Promise<void>;
 
-  before(async () => ({ pool, drop } = await freshDatabase()));
+  before(async () => {
+    ({ pool, drop } = await freshDatabase());
+    // Explicit fixture for the legacy single-schedule timing tests.
+    await pool.query("UPDATE schedules SET enabled=false,next_run_at=NULL");
+    await pool.query("UPDATE schedules SET cron='30 6 * * *' WHERE kind='morning_brief'");
+  });
   after(async () => drop());
 
   const morning = async () =>

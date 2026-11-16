@@ -115,3 +115,11 @@ file edits and experimental tools are removed. Web, image, browser, apps, plugin
 subagents are disabled too. Each run starts in an empty temporary directory with the EA
 instructions supplied explicitly. Only the agent MCP server is configured; Google and
 per-run API credentials stay in its private configuration, removed after the run.
+
+## Personal backlog and brief settings
+
+Open **Backlog** from Home or HQ to capture ideas and tasks, edit notes/priority/status, and view completed items. Items are stored in Postgres. The EA can read up to 40 open items through `get_daily_admin` and suggest next steps; only the owner can edit them. The initial task is **Connect the Moniqr chatbot**, saved for later.
+
+Open **Settings** to change or pause the two daily briefs. Initial times are **7:00am** and **4:30pm Australia/Brisbane**, every day. Saving recalculates future runs without immediately running a brief. The afternoon brief focuses on what remains today and preparation for tomorrow. The weekly look-ahead retains its existing schedule and enabled state.
+
+See [the proposed Moniqr roadmap](docs/moniqr-roadmap.md) for the next implementation slices.

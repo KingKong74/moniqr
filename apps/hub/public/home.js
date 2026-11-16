@@ -205,6 +205,8 @@ export class Home extends Component {
       { label: 'Inbox', count: unread, go: () => go('inbox') },
       { label: 'Projects', go: () => go('projects') },
       { label: 'Finance', go: () => go('finance') },
+      { label: 'Backlog', go: () => go('backlog') },
+      { label: 'Settings', go: () => go('settings') },
     ];
     return html`
       <div class="home">

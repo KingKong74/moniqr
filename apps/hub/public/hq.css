@@ -504,3 +504,20 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
   100% { transform: perspective(300px) rotateY(0); }
 }
 @media (prefers-reduced-motion: reduce) { :root.logo-flip .brand-mark { animation: none; } }
+
+/* Owner-managed backlog and daily brief controls. */
+.personal-page { max-width: 960px; gap: 24px; }
+.personal-page .panel { display: flex; flex-direction: column; gap: 14px; }
+.personal-form { gap: 16px; }
+.personal-form label { gap: 7px; font-size: 14px; }
+.personal-form .field { background: var(--n900); color: var(--n100); border: 1px solid var(--n600); padding: 10px 12px; border-radius: 8px; min-width: 0; }
+.personal-form textarea { width: 100%; resize: vertical; }
+.personal-form > .row { gap: 18px; }
+.personal-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.personal-page h2 { overflow-wrap: anywhere; }
+.brief-setting { border: 1px solid var(--n600); border-radius: 10px; padding: 16px; min-width: 0; }
+.brief-setting legend { padding: 0 8px; }
+.brief-setting .row { gap: 24px; }
+.brief-setting input[type=checkbox] { accent-color: var(--accent); }
+.tabs { max-width: 100%; overflow-x: auto; }
+@media (max-width: 760px) { .personal-page { width: 100%; } }

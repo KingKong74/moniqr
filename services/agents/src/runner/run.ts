@@ -64,6 +64,7 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
     'A bill is unpaid only when the email says so; otherwise say it is due or mentioned and that payment status is unknown. ' +
     'Never state balances or the contents of attachments. Manual and record-only decisions do not execute; never claim that ' +
     'messages were sent, bills paid or bookings made. If a tool fails, say which source was unavailable rather than leaving it out. ' +
+    'Read personal_backlog in get_daily_admin. Suggest at most three useful next steps when relevant, without treating ideas as commitments or executing them. ' +
     'moniqr adds its own sources section to the brief.';
   switch (claimed.run.kind) {
     case 'morning_brief':
@@ -77,6 +78,11 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
         'Then search his email as your instructions describe, and cover bills due in the next 7 days and anything ' +
         `that needs a reply or decision. If nothing turns up, say so in one line. ${notYet}${findings}${approvals}`
       );
+    case 'afternoon_brief':
+      return `${when}\n\nWrite Bailey's afternoon brief and save it with write_brief. ` +
+        'Focus on what remains today, anything that changed, and preparation for tomorrow. ' +
+        (sources.google ? `Call get_events with from ${today} and days 2. Search relevant email for deadlines and replies. ${findings}` : noData) +
+        `${notYet}${approvals}`;
     case 'weekly_lookahead':
       if (!sources.google) {
         return `${when}\n\nWrite Bailey's weekly look-ahead for the coming week and save it with write_brief. ${noData}${approvals}`;
