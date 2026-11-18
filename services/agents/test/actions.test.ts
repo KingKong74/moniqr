@@ -146,7 +146,7 @@ describe('action review', { skip: skipReason }, () => {
   });
 
   test('other runs must save their own finding first; run access ends with the run', async () => {
-    await api.call('POST', '/agents/ea/run', API_TOKEN, { kind: 'morning_brief' });
+    await api.call('POST', '/agents/ea/run', API_TOKEN, { kind: 'afternoon_brief' });
     const second = (await api.call('POST', '/runner/claim', RUNNER_TOKEN)).body;
     assert.equal((await api.call('POST', `/runs/${second.run.id}/actions`, second.runToken, manual)).status, 409);
     await api.call('POST', `/runs/${run.run.id}/brief`, run.runToken, { body_md: 'Pending decisions reviewed.', summary: 'Decisions only.' });
@@ -157,7 +157,7 @@ describe('action review', { skip: skipReason }, () => {
   });
 
   test('opposing decisions race atomically and a rejected decision remains idempotent after its expiry', async () => {
-    await api.call('POST', '/agents/ea/run', API_TOKEN, { kind: 'morning_brief' });
+    await api.call('POST', '/agents/ea/run', API_TOKEN, { kind: 'weekly_lookahead' });
     const next = (await api.call('POST', '/runner/claim', RUNNER_TOKEN)).body;
     const finding = (await api.call('POST', `/runs/${next.run.id}/findings`, next.runToken,
       { ...source, message_id: 'message2', thread_id: 'thread2' })).body.finding;

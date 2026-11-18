@@ -115,7 +115,17 @@ export interface BacklogItem {
 }
 export interface BriefSettings {
   timezone: string;
-  schedules: { kind: string; cron: string; enabled: boolean; timezone: string; next_run_at: string | null; last_run_at: string | null }[];
+  schedules: {
+    kind: string; cron: string; enabled: boolean; timezone: string; next_run_at: string | null; last_run_at: string | null;
+    /** The latest finished run of this kind, scheduled or manual. */
+    last_run: {
+      id: number; trigger: string; status: 'done' | 'failed'; queued_at: string; finished_at: string | null; error: string | null;
+      email_status: 'scanning' | 'completed' | 'partial' | 'failed' | null; email_searches: number | null;
+      email_read: number | null; email_failures: number | null; has_brief: boolean;
+    } | null;
+    active_run: { id: number; trigger: string; status: 'queued' | 'running'; queued_at: string } | null;
+    last_success_at: string | null;
+  }[];
 }
 export interface BriefSettingsInput {
   morning: string; afternoon: string; morning_enabled: boolean; afternoon_enabled: boolean;
@@ -136,7 +146,8 @@ export interface AgentsClient {
   calendar(): Promise<CalendarData>;
   latestBrief(): Promise<Brief | null>;
   recentRuns(limit: number): Promise<RunSummary[]>;
-  queueRun(kind: RunKind): Promise<void>;
+  /** existing is true when a run of this kind was already queued or running and no new one started. */
+  queueRun(kind: RunKind): Promise<{ existing: boolean } | void>;
 }
 
 export function agentsClient(baseUrl: string, token: string): AgentsClient {
@@ -172,8 +183,6 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
     calendar: () => call<CalendarData>('GET', '/calendar'),
     latestBrief: async () => (await call<{ brief: Brief | null }>('GET', '/briefs/latest')).brief,
     recentRuns: async (limit) => (await call<{ runs: RunSummary[] }>('GET', `/runs?limit=${limit}`)).runs,
-    queueRun: async (kind) => {
-      await call('POST', '/agents/ea/run', { kind });
-    },
+    queueRun: async (kind) => ({ existing: (await call<{ existing?: boolean }>('POST', '/agents/ea/run', { kind })).existing === true }),
   };
 }

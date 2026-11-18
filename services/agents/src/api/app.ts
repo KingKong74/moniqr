@@ -137,8 +137,9 @@ export function createApp(opts: AppOptions) {
 
   app.post('/agents/:slug/run', hub, async (req, res) => {
     const body = z.object({ kind: z.enum(RUN_KINDS).default('morning_brief') }).parse(req.body ?? {});
-    const run = await queueRun(pool, { agentSlug: String(req.params.slug), trigger: 'manual', kind: body.kind });
-    res.status(202).json({ run });
+    // A rerun while the same kind is queued or running returns that run instead of starting another.
+    const { existing, ...run } = await queueRun(pool, { agentSlug: String(req.params.slug), trigger: 'manual', kind: body.kind, reuseActive: true });
+    res.status(existing ? 200 : 202).json({ run, existing: !!existing });
   });
 
   // Cache the current Brisbane week: HQ polls every five seconds.

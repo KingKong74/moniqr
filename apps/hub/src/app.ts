@@ -318,9 +318,9 @@ export function createApp(opts: HubOptions) {
       res.status(400).type('text/plain').send('Unknown run kind.\n');
       return;
     }
-    await opts.agents.queueRun(kind);
+    const queued = await opts.agents.queueRun(kind);
     // The page posts with fetch and refreshes itself; a plain form post lands back on HQ.
-    if (req.accepts(['html', 'json']) === 'json') res.status(204).end();
+    if (req.accepts(['html', 'json']) === 'json') res.json({ existing: queued?.existing === true });
     else res.redirect(303, '/');
   });
 

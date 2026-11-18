@@ -110,12 +110,13 @@ describe('persisted email findings', { skip: skipReason }, () => {
   });
 
   test('a newer run wins over a late older run without losing owner status', async () => {
-    const claim = async () => {
-      await api.call('POST', '/agents/ea/run', API_TOKEN, { kind: 'morning_brief' });
+    // Overlapping runs are different kinds: a repeat of a running kind reuses that run.
+    const claim = async (kind: string) => {
+      await api.call('POST', '/agents/ea/run', API_TOKEN, { kind });
       return (await api.call('POST', '/runner/claim', RUNNER_TOKEN)).body;
     };
-    const older = await claim();
-    const newer = await claim();
+    const older = await claim('afternoon_brief');
+    const newer = await claim('weekly_lookahead');
     await api.call('POST', `/runs/${newer.run.id}/findings`, newer.runToken, { ...payload, summary: 'Newer' });
     await api.call('POST', `/runs/${older.run.id}/findings`, older.runToken, { ...payload, summary: 'Older' });
     const listing = (await api.call('GET', '/findings', API_TOKEN)).body;

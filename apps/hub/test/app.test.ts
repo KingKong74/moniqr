@@ -54,9 +54,11 @@ const agents: AgentsClient = {
   },
   queueRun: async (kind) => {
     queued.push(kind);
+    return { existing: queueExisting };
   },
 };
 
+let queueExisting = false;
 let base: string;
 let close: () => void;
 const SECRET = 'test-secret-that-is-at-least-32-characters';
@@ -301,10 +303,16 @@ test('run now queues a run from the hub', async () => {
   assert.deepEqual(queued.splice(0), ['test']);
 });
 
-test('run now answers the page script with no content', async () => {
-  const res = await post('kind=morning_brief', { ...authed, origin: ORIGIN, accept: 'application/json' });
-  assert.equal(res.status, 204);
-  assert.deepEqual(queued.splice(0), ['morning_brief']);
+test('run now tells the page script whether a run was already in progress', async () => {
+  let res = await post('kind=morning_brief', { ...authed, origin: ORIGIN, accept: 'application/json' });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { existing: false });
+  queueExisting = true;
+  try {
+    res = await post('kind=afternoon_brief', { ...authed, origin: ORIGIN, accept: 'application/json' });
+    assert.deepEqual(await res.json(), { existing: true });
+  } finally { queueExisting = false; }
+  assert.deepEqual(queued.splice(0), ['morning_brief', 'afternoon_brief']);
 });
 
 test('run now refuses cross-site posts and unknown kinds', async () => {

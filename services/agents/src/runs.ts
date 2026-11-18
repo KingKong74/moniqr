@@ -43,17 +43,24 @@ export class ConflictError extends Error {}
 
 export async function queueRun(
   pool: Pool,
-  opts: { agentSlug: string; trigger: Trigger; kind: string; scheduleId?: number },
-): Promise<Run> {
-  const { rows } = await pool.query<Run>(
-    `INSERT INTO runs (agent_id, trigger, kind, schedule_id)
-     SELECT id, $2, $3, $4 FROM agents WHERE slug = $1 AND enabled
-     RETURNING ${RUN_COLUMNS}`,
-    [opts.agentSlug, opts.trigger, opts.kind, opts.scheduleId ?? null],
-  );
-  const run = rows[0];
-  if (!run) throw new NotFoundError(`No enabled agent called "${opts.agentSlug}"`);
-  return run;
+  opts: { agentSlug: string; trigger: Trigger; kind: string; scheduleId?: number; reuseActive?: boolean },
+): Promise<Run & { existing?: boolean }> {
+  return withTransaction(pool, async (client) => {
+    // Locking the agent serialises concurrent requests, so two clicks cannot both queue a run.
+    const agent = (await client.query<{ id: number }>('SELECT id FROM agents WHERE slug = $1 AND enabled FOR UPDATE', [opts.agentSlug])).rows[0];
+    if (!agent) throw new NotFoundError(`No enabled agent called "${opts.agentSlug}"`);
+    if (opts.reuseActive) {
+      const active = (await client.query<Run>(
+        `SELECT ${RUN_COLUMNS} FROM runs WHERE agent_id = $1 AND kind = $2 AND status IN ('queued', 'running')
+         ORDER BY id LIMIT 1`, [agent.id, opts.kind])).rows[0];
+      if (active) return { ...active, existing: true };
+    }
+    const { rows } = await client.query<Run>(
+      `INSERT INTO runs (agent_id, trigger, kind, schedule_id) VALUES ($1, $2, $3, $4) RETURNING ${RUN_COLUMNS}`,
+      [agent.id, opts.trigger, opts.kind, opts.scheduleId ?? null],
+    );
+    return rows[0]!;
+  });
 }
 
 /**

@@ -133,6 +133,7 @@ class App extends Component {
   componentWillUnmount() {
     clearInterval(this.clock);
     clearTimeout(this.poll);
+    clearTimeout(this.settingsPoll);
     this.timers.forEach(clearTimeout);
     window.removeEventListener('keydown', this.onKey);
   }
@@ -368,8 +369,40 @@ class App extends Component {
       if (r.status === 401) return void location.assign('/login');
       if (!r.ok) throw new Error('Could not load. Please try again.');
       const data = await r.json();
-      if (seq === this.personalSeq) this.setState({ personalData: data });
+      if (seq === this.personalSeq) this.setState({ personalData: data }, () => { if (view === 'settings') this.refreshSettings(); });
     } catch (e) { if (seq === this.personalSeq) this.setState({ personalError: e.message }); }
+  }
+
+  /** Refresh settings in place (no loading flash); keeps polling while a brief is queued or running. */
+  async refreshSettings() {
+    clearTimeout(this.settingsPoll);
+    if (this.state.view !== 'settings') return;
+    try {
+      const r = await fetch('/api/settings', { headers: { accept: 'application/json' } });
+      if (r.status === 401) return void location.assign('/login');
+      if (r.ok && this.state.view === 'settings') this.setState({ personalData: await r.json() });
+    } catch {}
+    if (this.state.view === 'settings' && this.state.personalData?.schedules?.some((s) => s.active_run)) {
+      this.settingsPoll = setTimeout(() => this.refreshSettings(), 8_000);
+    }
+  }
+
+  async runBriefNow(kind) {
+    this.setState({ personalBusy: true, personalError: '', personalMessage: '' });
+    try {
+      const r = await fetch('/run', {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ kind }),
+      });
+      if (r.status === 401) return void location.assign('/login');
+      if (!r.ok) throw new Error('The brief could not be started. Please try again.');
+      const { existing } = await r.json().catch(() => ({}));
+      this.setState({ personalMessage: existing
+        ? 'That brief is already queued or running, so no second copy was started.'
+        : 'Brief queued. It usually takes one to two minutes.' });
+    } catch (e) { this.setState({ personalError: e.message }); }
+    finally { this.setState({ personalBusy: false }); await this.refreshSettings(); this.load(); }
   }
 
   async savePersonal(event, path) {
@@ -429,10 +462,36 @@ class App extends Component {
       ${!data ? html`<p>${this.state.personalError ? 'Settings unavailable.' : 'Loading settings…'}</p><button class="btn btn-secondary" onClick=${() => this.loadPersonal('settings')}>Retry</button>` : html`
       <section class="tile panel"><h2>Daily briefs</h2><p class="soft">A morning plan and an afternoon check-in. Every day, in Brisbane time (Australia/Brisbane).</p>
       <form class="col personal-form" onSubmit=${e => this.savePersonal(e, '/settings')}>
-        ${['morning','afternoon'].map(slot => { const s = schedule(slot); return html`<fieldset class="brief-setting"><legend>${slot === 'morning' ? 'Morning brief' : 'Afternoon brief'}</legend><div class="row wrap"><label class="row"><input type="checkbox" name=${`${slot}_enabled`} checked=${s?.enabled ?? false} /> Enabled</label><label class="col">Time<input class="field" type="time" required name=${slot} value=${s ? time(s) : slot === 'morning' ? '07:00' : '16:30'} /></label></div><p class="fs13 muted">${s?.enabled ? s.next_run_at ? `Next: ${fmt(s.next_run_at)}` : 'Next run is being scheduled.' : 'Paused'}${s?.last_run_at ? ` · Last queued: ${fmt(s.last_run_at)}` : ''}</p></fieldset>`; })}
+        ${['morning','afternoon'].map(slot => { const s = schedule(slot); return html`<fieldset class="brief-setting"><legend>${slot === 'morning' ? 'Morning brief' : 'Afternoon brief'}</legend><div class="row wrap"><label class="row"><input type="checkbox" name=${`${slot}_enabled`} checked=${s?.enabled ?? false} /> Enabled</label><label class="col">Time<input class="field" type="time" required name=${slot} value=${s ? time(s) : slot === 'morning' ? '07:00' : '16:30'} /></label></div><p class="fs13 muted">${s?.enabled ? s.next_run_at ? `Next: ${fmt(s.next_run_at)}` : 'Next run is being scheduled.' : 'Paused. It will not run on its own.'}</p>${s && this.renderRunStatus(s, fmt)}</fieldset>`; })}
         <p class="fs13 muted">Saving applies to future runs. It does not run a brief immediately.</p><button class="btn btn-primary" disabled=${this.state.personalBusy}>${this.state.personalBusy ? 'Saving…' : 'Save brief schedule'}</button>
       </form></section><section class="tile panel"><h2>Personal backlog</h2><p class="soft">Keep ideas and tasks ready for your EA to help prioritise.</p><button class="btn btn-secondary" onClick=${() => this.go('backlog')}>Open backlog</button></section>`}
     </main>`;
+  }
+
+  /** The last real outcome of a brief kind: failures, partial email reads and a safe manual rerun. */
+  renderRunStatus(s, fmt) {
+    const last = s.last_run, active = s.active_run;
+    const by = (r) => r.trigger === 'schedule' ? 'scheduled' : 'manual';
+    let tone = 'muted', text = 'No run yet.';
+    if (last?.status === 'failed') { tone = 'coral'; text = `Last run failed (${by(last)}, ${fmt(last.finished_at ?? last.queued_at)}).`; }
+    else if (last) {
+      const email = last.email_status === 'completed' ? `email read in full (${last.email_searches} searches)`
+        : last.email_status === 'partial' ? `email only partly read: ${last.email_failures} ${last.email_failures === 1 ? 'read' : 'reads'} failed`
+        : last.email_status === 'failed' ? 'email could not be read'
+        : 'email not searched';
+      if (last.email_status === 'partial' || last.email_status === 'failed') tone = 'coral';
+      text = `Last run ${fmt(last.finished_at ?? last.queued_at)} (${by(last)}): brief written, ${email}.`;
+    }
+    return html`<div class="col run-status" style="gap: 6px;">
+      <p class=${`fs13 ${tone}`} role="status">${text}</p>
+      ${last?.status === 'failed' && last.error && html`<p class="fs12 muted" style="overflow-wrap: anywhere;">${last.error}</p>`}
+      ${last?.status === 'failed' && s.last_success_at && html`<p class="fs12 muted">Last successful brief: ${fmt(s.last_success_at)}</p>`}
+      <div class="row wrap" style="gap: 10px; align-items: center;">
+        <button type="button" class="btn sm btn-secondary" disabled=${this.state.personalBusy || !!active}
+          onClick=${() => this.runBriefNow(s.kind)}>${active ? (active.status === 'running' ? 'Running…' : 'Queued…') : 'Run now'}</button>
+        <span class="fs12 muted">${active ? `Started ${fmt(active.queued_at)}. This page updates when it finishes.` : 'Runs once now. Your schedule is unchanged.'}</span>
+      </div>
+    </div>`;
   }
 
   /** Values several sections share. */

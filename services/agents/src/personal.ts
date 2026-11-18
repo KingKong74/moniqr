@@ -20,11 +20,29 @@ export async function listBacklog(pool: Pool) {
     CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, created_at DESC, id DESC`);
   return { items: rows };
 }
+/** What the latest run of a kind actually did, so a missed or partial brief is visible. */
+const LAST_RUN = `LEFT JOIN LATERAL (
+    SELECT r.id, r.trigger, r.status, r.queued_at, r.started_at, r.finished_at, left(r.error, 300) AS error,
+      sc.status AS email_status, sc.searches AS email_searches, sc.messages_read AS email_read, sc.failures AS email_failures,
+      EXISTS (SELECT 1 FROM briefs b WHERE b.run_id = r.id) AS has_brief
+    FROM runs r LEFT JOIN email_scans sc ON sc.run_id = r.id
+    WHERE r.agent_id = s.agent_id AND r.kind = s.kind AND r.status IN ('done', 'failed')
+    ORDER BY r.id DESC LIMIT 1) last ON true
+  LEFT JOIN LATERAL (
+    SELECT r.id, r.trigger, r.status, r.queued_at FROM runs r
+    WHERE r.agent_id = s.agent_id AND r.kind = s.kind AND r.status IN ('queued', 'running')
+    ORDER BY r.id LIMIT 1) active ON true
+  LEFT JOIN LATERAL (
+    SELECT max(r.finished_at) AS at FROM runs r
+    WHERE r.agent_id = s.agent_id AND r.kind = s.kind AND r.status = 'done') ok ON true`;
+
 export async function briefSettings(pool: Pool) {
-  const { rows } = await pool.query(`SELECT s.kind, s.cron, s.enabled, s.timezone, s.next_run_at, s.last_run_at
-    FROM schedules s JOIN agents a ON a.id=s.agent_id WHERE a.slug='ea'
-    AND s.kind IN ('morning_brief','afternoon_brief') ORDER BY s.kind DESC`);
-  return { timezone: 'Australia/Brisbane', schedules: rows };
+  const { rows } = await pool.query(`SELECT s.kind, s.cron, s.enabled, s.timezone, s.next_run_at, s.last_run_at,
+      to_jsonb(last) AS last_run, CASE WHEN active.id IS NULL THEN NULL ELSE to_jsonb(active) END AS active_run,
+      ok.at AS last_success_at
+    FROM schedules s JOIN agents a ON a.id=s.agent_id ${LAST_RUN}
+    WHERE a.slug='ea' AND s.kind IN ('morning_brief','afternoon_brief') ORDER BY s.kind DESC`);
+  return { timezone: 'Australia/Brisbane', schedules: rows.map((r) => ({ ...r, last_run: r.last_run?.id ? r.last_run : null })) };
 }
 export async function saveBriefSettings(pool: Pool, body: z.infer<typeof briefSettingsInput>) {
   await withTransaction(pool, async client => {
