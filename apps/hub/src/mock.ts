@@ -1,5 +1,5 @@
 /**
- * Placeholder content for the HQ page until the agent service stores these things. Everything
+ * Placeholder content for the dashboard until the agent service stores these things. Everything
  * the page shows that isn't the brief, the runs or the links comes from here, so swapping in
  * real data is a server-side change: replace a field with a query and keep the shape.
  *

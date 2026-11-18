@@ -55,7 +55,7 @@ export interface HqInput {
 }
 
 /**
- * Everything the HQ page draws, as JSON for /api/hq. Briefs, calendar, findings, runs and links
+ * Everything the dashboard draws, as JSON for /api/hq. Briefs, calendar, findings, runs and links
  * are real; lifestyle cards are still samples. The brief's Markdown is rendered here so the
  * browser only ever receives escaped HTML.
  */
@@ -108,7 +108,7 @@ export function renderPage(email: string): string {
 </head>
 <body>
   <div id="app"><p class="boot">Loading moniqr for ${esc(email)}…</p></div>
-  <noscript><p class="boot">HQ needs JavaScript.</p></noscript>
+  <noscript><p class="boot">moniqr needs JavaScript.</p></noscript>
 </body>
 </html>`;
 }

@@ -1,8 +1,9 @@
-// HQ, the moniqr.com command centre, behind Home (home.js). A port of the Personal OS HQ v4 design to Preact + htm, loaded as
+// The dashboard, the moniqr.com command centre, behind Home (home.js). A port of the Personal OS HQ v4 design to Preact + htm, loaded as
 // one ES module so there's no build step. The server sends everything to draw from /api/hq:
 // live briefs, runs, calendar, findings and proposal decisions, plus sample lifestyle content
 // (data.mock). Enabled calendar proposals create events only after owner approval;
 // manual/record-only choices never execute. Chat, priorities, mood and habits are samples.
+// SOURCES below records which cards are live and which are samples; every card shows a badge.
 import { Component, html, render } from '/vendor/preact-htm.js';
 import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
 import { projectSamples, financeSamples } from './dashboard-mocks.js';
@@ -38,6 +39,49 @@ const EV_STYLE = {
   life: { bg: 'color-mix(in srgb, var(--accent-2) 30%, transparent)', border: 'transparent', line: 'solid', fg: 'var(--n100)', label: 'Google event' },
   pend: { bg: 'color-mix(in srgb, var(--a400) 14%, transparent)', border: 'var(--a400)', line: 'dashed', fg: 'var(--a200)', label: 'Moniqr request' },
 };
+
+/**
+ * Where each dashboard card's content comes from. Every card shows a Live or Sample badge from
+ * this list, and "Hide samples" removes the sample cards, so flip a card to 'live' here when it's wired.
+ */
+const SOURCES = {
+  ea: { kind: 'live', from: 'the agent service (EA runs)' },
+  brief: { kind: 'live', from: 'the latest brief the EA wrote' },
+  slides: { kind: 'sample', from: 'Suggestion slides are placeholder content' },
+  decision: { kind: 'live', from: 'proposals stored by the agent service' },
+  actions: { kind: 'live', from: 'proposals stored by the agent service' },
+  calendar: { kind: 'live', from: 'Google Calendar, plus pending calendar proposals' },
+  upNext: { kind: 'live', from: 'Google Calendar' },
+  inbox: { kind: 'live', from: 'email findings from the inbox scan' },
+  runs: { kind: 'live', from: 'the agent service run history' },
+  moniqr: { kind: 'live', from: 'the latest EA run' },
+  agents: { kind: 'sample', from: 'Only the EA exists so far; the other agents are placeholders' },
+  pri: { kind: 'sample', from: 'Priorities are not wired to the backlog yet' },
+  news: { kind: 'sample', from: 'No news feed is connected' },
+  mood: { kind: 'sample', from: 'Check-ins are not saved anywhere yet' },
+  pick: { kind: 'sample', from: 'Daily picks are placeholder content' },
+  glance: { kind: 'sample', from: 'No health or fitness data is connected' },
+  habits: { kind: 'sample', from: 'Habit ticks are not saved anywhere yet' },
+  meals: { kind: 'sample', from: 'No meal plan is connected' },
+  people: { kind: 'sample', from: 'People reminders are placeholder content' },
+  markets: { kind: 'sample', from: 'No market data is connected' },
+  projects: { kind: 'sample', from: 'Not connected to Stack yet' },
+  finance: { kind: 'sample', from: 'Not connected to Finance yet' },
+  briefFallback: { kind: 'sample', from: 'Shown until the EA writes its first brief' },
+  chat: { kind: 'sample', from: 'Chat replies are canned; the chatbot is not connected yet' },
+};
+const LIVE_COUNT = Object.values(SOURCES).filter((x) => x.kind === 'live').length;
+const SAMPLE_COUNT = Object.keys(SOURCES).length - LIVE_COUNT;
+
+/** The Live or Sample badge for a card. `down` replaces "Live" when the live source is failing. */
+function src(id, down, extra = '') {
+  const s = SOURCES[id];
+  const live = s.kind === 'live';
+  const title = live ? `Live: reads ${s.from}.${down ? ' It is unavailable right now.' : ''}` : `Sample data. ${s.from}.`;
+  return html`<span class=${`src ${live ? 'live' : 'sample'}${live && down ? ' down' : ''}${extra ? ` ${extra}` : ''}`} title=${title}>${live ? down || 'Live' : 'Sample'}</span>`;
+}
+
+const readHideSamples = () => { try { return localStorage.getItem('moniqr.hideSamples') === '1'; } catch { return false; } };
 
 const MOODS = ['Low', 'Meh', 'Okay', 'Good', 'Great'];
 const ENERGY = ['Drained', 'Low', 'Steady', 'High', 'Wired'];
@@ -79,6 +123,7 @@ class App extends Component {
     view: 'home',
     personalData: null, personalError: '', personalBusy: false, personalMessage: '', backlogFilter: 'open', backlogEdit: null,
     theme: document.documentElement.dataset.theme,
+    hideSamples: readHideSamples(),
     projectFilter: 'All',
     chatOpen: false,
     slide: 0,
@@ -149,7 +194,7 @@ class App extends Component {
       const res = await fetch('/api/hq', { headers: { accept: 'application/json' } });
       // Session expired or signed out in another tab: back to the login page, then here.
       if (res.status === 401) return void location.assign('/login');
-      if (!res.ok) throw new Error(`HQ data returned ${res.status}`);
+      if (!res.ok) throw new Error(`Dashboard data returned ${res.status}`);
       const data = await res.json();
       if (seq !== this.loadSeq) return;
       const first = !this.state.data;
@@ -321,6 +366,12 @@ class App extends Component {
     document.startViewTransition(arrive).finished.finally(() => { root.classList.remove('collapsing'); after(); });
   };
 
+  toggleSamples = () => {
+    const hideSamples = !this.state.hideSamples;
+    try { localStorage.setItem('moniqr.hideSamples', hideSamples ? '1' : '0'); } catch {}
+    this.setState({ hideSamples, slide: 0 }, () => this.startBar());
+  };
+
   toggleTheme = () => {
     this.setState({ theme: applyTheme(this.state.theme === 'dark' ? 'light' : 'dark', true) });
   };
@@ -330,7 +381,7 @@ class App extends Component {
   render() {
     const { data, loadError } = this.state;
     if (!data) {
-      return html`<p class="boot">${loadError ? 'HQ could not load. Refresh to try again.' : 'Loading HQ…'}</p>`;
+      return html`<p class="boot">${loadError ? 'The dashboard could not load. Refresh to try again.' : 'Loading the dashboard…'}</p>`;
     }
     const v = this.derive();
     const chat = html`
@@ -548,7 +599,7 @@ class App extends Component {
                 ? { kind: 'idle', state: 'last run failed' }
                 : { kind: 'run', state: 'active' }),
       },
-      ...mock.workforce,
+      ...(this.state.hideSamples ? [] : mock.workforce.map((w) => ({ ...w, sample: true }))),
     ];
     const hour = now.getUTCHours() + now.getUTCMinutes() / 60;
     return { mock, now, todayIdx, week, hour, pending, unread, workforce };
@@ -557,7 +608,7 @@ class App extends Component {
   renderNav(v) {
     const items = [
       { label: 'Home', view: 'home', go: () => this.openView('home') },
-      { label: 'HQ', view: 'hq', go: () => this.openView('hq') },
+      { label: 'Dashboard', view: 'hq', go: () => this.openView('hq') },
       { label: 'Inbox', view: 'inbox', badge: v.unread || '', go: () => this.openView('inbox') },
       { label: 'Projects', view: 'projects', go: () => this.openView('projects') },
       { label: 'Finance', view: 'finance', go: () => this.openView('finance') },
@@ -593,13 +644,13 @@ class App extends Component {
             (w) => html`<div class="row">
               <span class="dot" style=${`border: 1px solid ${dot[w.kind][1]}; background: ${dot[w.kind][0]};`}></span>
               <span class="fs13 soft grow">${w.name}</span>
-              <span class="fs12 muted">${w.state}</span>
+              ${w.sample ? src('agents', null, 'flush') : html`<span class="fs12 muted">${w.state}</span>`}
             </div>`,
           )}
         </div>
         <div class="spacer" style="flex: 1;"></div>
         <div class="up-next">
-          <span class="fs12 muted">Up next</span>
+          <span class="fs12 muted">Up next ${src('upNext', this.state.data.calendar?.status === 'error' ? 'Down' : this.state.data.calendar?.status !== 'connected' ? 'Off' : null)}</span>
           <span class="fs14 bright" style="font-weight: 500;">${v.mock.upNext.title}</span>
           <span class="fs12 dim">${v.mock.upNext.note}</span>
         </div>
@@ -618,7 +669,7 @@ class App extends Component {
     return html`
       <header class="topbar">
         <nav class="tabs" aria-label="Sections">
-          ${[['home', 'Home'], ['hq', 'HQ'], ['inbox', 'Inbox'], ['projects', 'Projects'], ['finance', 'Finance'], ['backlog', 'Backlog'], ['settings', 'Settings']].map(([id, label]) => html`<button type="button"
+          ${[['home', 'Home'], ['hq', 'Dashboard'], ['inbox', 'Inbox'], ['projects', 'Projects'], ['finance', 'Finance'], ['backlog', 'Backlog'], ['settings', 'Settings']].map(([id, label]) => html`<button type="button"
             class=${this.state.view === id || (id === 'hq' && this.state.view === 'briefing') ? 'on' : ''} aria-current=${this.state.view === id ? 'page' : null}
             onClick=${() => this.openView(id)}>${label}</button>`)}
         </nav>
@@ -628,7 +679,11 @@ class App extends Component {
             <span class="kbd">⌘K</span>
           </form>
         </div>
-        <span class="sample" title="The brief, calendar, email findings, proposal decisions, EA runs and links are live. Lifestyle cards and chat are samples.">Some sample cards</span>
+        <button type="button" class="src-toggle" aria-pressed=${this.state.hideSamples} onClick=${this.toggleSamples}
+          title=${`${LIVE_COUNT} cards read live data and ${SAMPLE_COUNT} show sample data. Hover any badge to see its source.`}>
+          <span class="src live">Live</span><span class="src sample">Sample</span>
+          <span>${this.state.hideSamples ? 'Show samples' : 'Hide samples'}</span>
+        </button>
         <span class="clock fs13 muted nowrap">${clock}</span>
         <form method="post" action="/logout" class="signout">
           <button type="submit" class="signout-btn fs12" title=${`Signed in as ${this.state.data?.email ?? ''}`}>Sign out</button>
@@ -641,8 +696,8 @@ class App extends Component {
     return html`
       <main class="main">
         <section class="col" style="gap: 10px;" aria-label="Live Executive Assistant">
-          <h2>Executive Assistant</h2>
-          <p class="fs14 muted">Generate a brief from your connected email and calendars. Calendar events and email findings are live; lifestyle cards and chat contain sample data.</p>
+          <h2>Executive Assistant ${src('ea', this.state.data.agentsError && 'Offline')}</h2>
+          <p class="fs14 muted">Generate a brief from your connected email and calendars. Cards marked Live read real data; cards marked Sample are placeholders that aren't wired up yet.</p>
           ${this.state.data.agentsError && html`<p class="fs14 coral">The agent service isn't reachable right now.</p>`}
           <div class="row wrap">
             <button class="btn btn-primary" disabled=${this.state.posting || this.state.data.busy || this.state.data.agentsError} onClick=${() => { this.openView('briefing'); this.runEa('morning_brief'); }}>${this.state.posting || this.state.data.busy ? 'EA is running…' : 'Run EA now'}</button>
@@ -650,13 +705,13 @@ class App extends Component {
           </div>
         </section>
         <div class="hero">${this.renderCarousel(v)} ${this.renderDecision(v)}</div>
-        ${this.renderFocusCards(v)} ${this.renderActions()} ${this.renderGlance(v)} ${this.renderCalendar(v)}
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px;">
+        ${!this.state.hideSamples && this.renderFocusCards(v)} ${this.renderActions()} ${!this.state.hideSamples && this.renderGlance(v)} ${this.renderCalendar(v)}
+        ${!this.state.hideSamples && html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px;">
           ${this.renderHabits(v)} ${this.renderMeals(v)} ${this.renderPeople(v)}
         </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;">
           ${this.renderMarkets(v)} ${this.renderProjects(v)}
-        </div>
+        </div>`}
       </main>
     `;
   }
@@ -670,6 +725,7 @@ class App extends Component {
           kicker: `Daily briefing · ${brief.kind} · ${brief.when}`,
           title: greeting,
           body: brief.summary,
+          src: 'brief',
           primary: { label: 'Open full briefing', briefing: true },
           secondary: { label: 'Plan my day', ask: 'Plan my day around my priorities' },
         }
@@ -677,10 +733,11 @@ class App extends Component {
           kicker: 'Daily briefing',
           title: greeting,
           body: 'No brief yet. Run the EA to write the first one.',
+          src: 'brief',
           primary: { label: 'Run EA now', run: true },
           secondary: { label: 'Open briefing', briefing: true },
         };
-    return [first, ...v.mock.slides];
+    return this.state.hideSamples ? [first] : [first, ...v.mock.slides.map((s) => ({ ...s, src: 'slides' }))];
   }
 
   slideAction(a) {
@@ -717,7 +774,7 @@ class App extends Component {
               style=${`opacity: ${i === si ? 1 : 0}; transform: translateX(${i === si ? 0 : i < si ? -18 : 18}px); pointer-events: ${i === si ? 'auto' : 'none'};`}
               aria-hidden=${i !== si}
             >
-              <span class="fs13" style=${`color: ${i === 0 ? 'var(--n500)' : 'var(--accent-2)'};`}>${s.kicker}</span>
+              <span class="fs13" style=${`color: ${i === 0 ? 'var(--n500)' : 'var(--accent-2)'};`}>${s.kicker} ${src(s.src)}</span>
               <h1>${s.title}</h1>
               <p>${s.body}</p>
               <div class="row wrap" style="margin-top: 4px;">
@@ -739,7 +796,7 @@ class App extends Component {
 
   renderDecision(v) {
     return html`<section class="decision col" style="gap: 12px;">
-      <span class="fs12 steel">Your decisions</span>
+      <span class="fs12 steel">Your decisions ${src('decision', this.state.data.actionsError && 'Down')}</span>
       <h2>${this.state.data.actionsError ? 'Action review unavailable' : v.pending ? `${v.pending} proposal${v.pending === 1 ? '' : 's'} to review` : 'No pending proposals'}</h2>
       <p class="fs14 soft">Inspect the source and details before deciding. Calendar proposals explicitly enabled for creation add an event after approval; manual suggestions stay yours to carry out.</p>
       <button class="btn btn-secondary" onClick=${() => document.getElementById('actions')?.scrollIntoView({ behavior: 'smooth' })}>Review proposals</button>
@@ -832,7 +889,7 @@ class App extends Component {
     const source = a?.source_snapshot ?? {};
     const history = a && actionHistory?.id === a.id && actionHistory.revision === a.revision ? actionHistory.events : null;
     return html`<section id="actions" class="col" style="gap: 12px;">
-      <div class="between wrap" style="gap: 12px;"><h2 style="font-size: 20px;">Action review</h2>
+      <div class="between wrap" style="gap: 12px;"><h2 style="font-size: 20px;">Action review ${src('actions', this.state.data.actionsError && 'Down')}</h2>
         <span class="fs13 muted">${data.actionsError ? 'Unavailable' : `${actions.pending - (actions.demo_pending ?? 0)} awaiting review${actions.demo_pending ? ` · ${actions.demo_pending} demo requests` : ''}`}</span></div>
       <p class="fs12 muted">Only calendar proposals labelled “Creates an event after approval” can write to your main calendar. Manual plans and earlier record-only decisions never execute.</p>
       ${!actions.calendar_write_ready && html`<p class="fs13 dim">Calendar creation needs Google write permission. You can still review requests and see their overlay.</p>`}
@@ -919,7 +976,7 @@ class App extends Component {
       }),
     );
     const card = (id, extra, body) =>
-      html`<section class=${`fcard ${extra}`} ref=${this.cardRefs[id]} style=${L[id].style} onClick=${L[id].onCard}>${body}</section>`;
+      html`<section class=${`fcard is-sample ${extra}`} ref=${this.cardRefs[id]} style=${L[id].style} onClick=${L[id].onCard}>${body}</section>`;
     return html`
       <div class="col" style="gap: 8px;">
         ${F &&
@@ -982,7 +1039,7 @@ class App extends Component {
     }
     return html`
       <div class="between">
-        <h2 class="card-title">Your priorities</h2>
+        <h2 class="card-title">Your priorities ${src('pri')}</h2>
         <span class=${`fs12 ${this.state.priTouched ? 'steel' : 'muted'}`}>${this.state.priTouched ? 'Moniqr replanned your day' : 'Order = importance'}</span>
       </div>
       ${order.map((id, i) => {
@@ -1048,7 +1105,7 @@ class App extends Component {
     const followed = interests.filter((i) => !this.state.muted[i.label]).map((i) => i.label);
     return html`
       <div class="between">
-        <h2 class="card-title">News for you</h2>
+        <h2 class="card-title">News for you ${src('news')}</h2>
         <a
           href="#"
           class="fs12"
@@ -1117,7 +1174,7 @@ class App extends Component {
     const trend = [...v.mock.moodTrend, mood];
     return html`
       <div class="between">
-        <h2 class="card-title">How are you feeling?</h2>
+        <h2 class="card-title">How are you feeling? ${src('mood')}</h2>
         <span class="fs12 muted">${slot}</span>
       </div>
       <div class="moods">
@@ -1168,7 +1225,7 @@ class App extends Component {
     }
     return html`
       <div class="between" style="align-items: center;">
-        <span class="fs12 steel">${pk.kind}</span>
+        <span class="fs12 steel">${pk.kind} ${src('pick')}</span>
         <span
           class="fs12 dim"
           style="cursor: pointer;"
@@ -1323,7 +1380,7 @@ class App extends Component {
     return html`
       <section id="inbox" class="col" style="gap: 12px;">
         <div class="between wrap" style="gap: 12px;">
-          <div class="col"><h2 style="font-size: 20px;">Admin inbox</h2>
+          <div class="col"><h2 style="font-size: 20px;">Admin inbox ${src('inbox', this.state.data.findingsError && 'Down')}</h2>
             <span class="fs13 muted">${v.unread} new · Gmail findings · Brisbane time</span></div>
           <button class="btn btn-secondary" disabled=${this.state.posting || data.busy} onClick=${() => this.runEa('morning_brief')}>${data.busy ? 'EA running…' : 'Scan email'}</button>
         </div>
@@ -1391,8 +1448,8 @@ class App extends Component {
     return html`
       <section class="glance">
         ${tiles.map(
-          ([label, value, pct, note]) => html`<div class="tile">
-            <span class="fs12 muted">${label}</span>
+          ([label, value, pct, note]) => html`<div class="tile is-sample">
+            <span class="fs12 muted">${label} ${src('glance')}</span>
             <span class="v">${value}</span>
             <div class="bar"><div style=${`width: ${pct}%;`}></div></div>
             <span class="fs12 dim">${note}</span>
@@ -1422,7 +1479,7 @@ class App extends Component {
       <section id="calendar" class="col" style="gap: 12px;">
         <div class="row wrap" style="gap: 10px;">
           <button class="btn btn-secondary" style="border-radius: 18px; padding: 6px 16px;">Today</button>
-          <h2 style="font-weight: 400; font-size: 20px;">${title}</h2>
+          <h2 style="font-weight: 400; font-size: 20px;">${title} ${src('calendar', calendarStatus === 'error' ? 'Down' : calendarStatus !== 'connected' ? 'Not connected' : null)}</h2>
           <div style="flex: 1;"></div>
           <div class="row wrap fs12 dim" style="gap: 12px;">
             ${[EV_STYLE.life, EV_STYLE.pend].map((c) => html`<span class="row nowrap" style="gap: 6px;"><span class="swatch" style=${swatch(c)}></span>${c.label}</span>`)}
@@ -1513,8 +1570,8 @@ class App extends Component {
     const td = this.state.today;
     const done = v.mock.habits.filter((h) => td[h.id]).length;
     return html`
-      <section class="tile panel">
-        <div class="between"><h2 class="card-title">Habits</h2><span class="fs12 muted">${done} of ${v.mock.habits.length} today</span></div>
+      <section class="tile panel is-sample">
+        <div class="between"><h2 class="card-title">Habits ${src('habits')}</h2><span class="fs12 muted">${done} of ${v.mock.habits.length} today</span></div>
         <div class="habits">
           <span></span>
           ${DOW.map((d, i) => html`<span class="fs10" style=${`text-align: center; color: ${i === v.todayIdx ? 'var(--accent-2)' : 'var(--n500)'};`}>${d[0]}</span>`)}
@@ -1541,8 +1598,8 @@ class App extends Component {
   renderMeals(v) {
     const { meals } = v.mock;
     return html`
-      <section class="tile panel">
-        <div class="between"><h2 class="card-title">Food today</h2><span class="fs12 muted">${meals.planned}</span></div>
+      <section class="tile panel is-sample">
+        <div class="between"><h2 class="card-title">Food today ${src('meals')}</h2><span class="fs12 muted">${meals.planned}</span></div>
         ${meals.items.map(
           (m) => html`<div class="between">
             <div class="col" style="min-width: 0;">
@@ -1558,8 +1615,8 @@ class App extends Component {
 
   renderPeople(v) {
     return html`
-      <section class="tile panel">
-        <h2 class="card-title">People</h2>
+      <section class="tile panel is-sample">
+        <h2 class="card-title">People ${src('people')}</h2>
         ${v.mock.people.map(
           (p) => html`<div style="display: grid; grid-template-columns: 34px 1fr; gap: 8px;">
             <span class="fs12 coral" style="padding-top: 1px;">${p.when}</span>
@@ -1573,8 +1630,8 @@ class App extends Component {
   renderMarkets(v) {
     const finance = this.state.data.links.find((l) => l.name === 'Finance')?.url;
     return html`
-      <section class="tile panel" style="gap: 8px;">
-        <div class="between"><h2 class="card-title">Markets this week</h2><a class="fs12" href=${finance}>Your portfolio is in Finance</a></div>
+      <section class="tile panel is-sample" style="gap: 8px;">
+        <div class="between"><h2 class="card-title">Markets this week ${src('markets')}</h2><a class="fs12" href=${finance}>Your portfolio is in Finance</a></div>
         ${v.mock.markets.map(
           (m) => html`<div style="display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; align-items: baseline;">
             <span class="fs12 muted">${m.when}</span>
@@ -1589,8 +1646,8 @@ class App extends Component {
   renderProjects(v) {
     const stack = this.state.data.links.find((l) => l.name === 'Stack')?.url;
     return html`
-      <section class="tile panel">
-        <div class="between"><h2 class="card-title">Projects</h2><a class="fs12" href=${stack}>All projects</a></div>
+      <section class="tile panel is-sample">
+        <div class="between"><h2 class="card-title">Projects ${src('projects')}</h2><a class="fs12" href=${stack}>All projects</a></div>
         ${v.mock.projects.map(
           (p) => html`<div class="col" style="gap: 5px;">
             <div class="between" style="gap: 10px;">
@@ -1604,12 +1661,12 @@ class App extends Component {
     `;
   }
 
-  dashboardHeader(title, description, app) {
+  dashboardHeader(title, description, app, id) {
     const url = this.state.data.links.find((l) => l.name === app)?.url;
     return html`<header class="dashboard-heading between wrap">
-      <div class="col" style="gap: 8px;"><span class="fs12 steel">HEADQUARTERS / ${title.toUpperCase()}</span><h1>${title}</h1><p class="muted">${description}</p></div>
+      <div class="col" style="gap: 8px;"><span class="fs12 steel">MONIQR / ${title.toUpperCase()}</span><h1>${title}</h1><p class="muted">${description}</p></div>
       <a class="btn btn-secondary" href=${url}>Open ${app} ↗</a>
-    </header><div class="dashboard-notice"><span class="sample">Design preview</span><span>Sample data · ${app} is not connected to this dashboard yet.</span></div>`;
+    </header><div class="dashboard-notice">${src(id, null, 'flush')}<span>Everything on this page is sample data. ${app} is not connected to moniqr yet.</span></div>`;
   }
 
   dashboardMetric(label, value, note) {
@@ -1621,7 +1678,7 @@ class App extends Component {
     const projects = projectSamples.filter((p) => filter === 'All' || (filter === 'Needs attention' ? !!p.attention : p.status === filter));
     const stack = this.state.data.links.find((l) => l.name === 'Stack')?.url;
     return html`<main class="main dashboard">
-      ${this.dashboardHeader('Projects', 'Pick up your work, clear blockers and keep the next step in sight.', 'Stack')}
+      ${this.dashboardHeader('Projects', 'Pick up your work, clear blockers and keep the next step in sight.', 'Stack', 'projects')}
       <div class="dashboard-metrics">
         ${this.dashboardMetric('Projects in motion', '3', 'Across your workspace')}
         ${this.dashboardMetric('Needs attention', '2', '1 blocked · 1 awaiting review')}
@@ -1629,8 +1686,8 @@ class App extends Component {
         ${this.dashboardMetric('Latest checkpoint', '2h ago', 'Moniqr · dashboard mockups')}
       </div>
       <div class="dashboard-columns">
-        <section class="tile panel dashboard-resume"><span class="fs12 steel">PICK UP WHERE YOU LEFT OFF</span><h2>Moniqr</h2><p class="soft">Projects and Finance, right here in HQ.</p><p class="muted">The navigation is in place. Next up: review the overview cards and decide what to surface from each app.</p><div class="dashboard-next"><span class="fs12 muted">NEXT STEP</span><p>Finish the Projects and Finance overview</p></div><a class="btn btn-primary" style="align-self: flex-start;" href=${stack}>Continue in Stack ↗</a></section>
-        <section class="tile panel"><div class="between"><h2 class="card-title">Needs your attention</h2><span class="badge">2</span></div><div class="dashboard-list-row col"><span class="coral fs12">BLOCKED · FINANCE</span><span>Confirm the categorisation approach</span><p class="fs13 muted">Choose the rules before the next import pass.</p></div><div class="dashboard-list-row col"><span class="steel fs12">REVIEW · MONIQR</span><span>Review the HQ dashboard layouts</span><p class="fs13 muted">Check the content hierarchy for both tabs.</p></div></section>
+        <section class="tile panel dashboard-resume"><span class="fs12 steel">PICK UP WHERE YOU LEFT OFF</span><h2>Moniqr</h2><p class="soft">Projects and Finance, right here in your dashboard.</p><p class="muted">The navigation is in place. Next up: review the overview cards and decide what to surface from each app.</p><div class="dashboard-next"><span class="fs12 muted">NEXT STEP</span><p>Finish the Projects and Finance overview</p></div><a class="btn btn-primary" style="align-self: flex-start;" href=${stack}>Continue in Stack ↗</a></section>
+        <section class="tile panel"><div class="between"><h2 class="card-title">Needs your attention</h2><span class="badge">2</span></div><div class="dashboard-list-row col"><span class="coral fs12">BLOCKED · FINANCE</span><span>Confirm the categorisation approach</span><p class="fs13 muted">Choose the rules before the next import pass.</p></div><div class="dashboard-list-row col"><span class="steel fs12">REVIEW · MONIQR</span><span>Review the dashboard layouts</span><p class="fs13 muted">Check the content hierarchy for both tabs.</p></div></section>
       </div>
       <section class="col" style="gap: 16px;"><div class="between wrap"><h2>Your projects</h2><div class="row wrap" aria-label="Filter projects">${['All', 'Building', 'Live', 'Needs attention'].map((f) => html`<button class=${`btn sm ${filter === f ? 'btn-primary' : 'btn-secondary'}`} aria-pressed=${filter === f} onClick=${() => this.setState({ projectFilter: f })}>${f}</button>`)}</div></div>
         <div class="dashboard-projects">${projects.map((p) => html`<article class="tile panel"><div class="between"><span class="fs12 muted">${p.category}</span><span class=${`dashboard-status ${p.attention === 'Blocked' ? 'coral' : 'steel'}`}>${p.status}</span></div><h3>${p.name}</h3><p class="fs13 muted">${p.note}</p><div class="between fs12"><span class="dim">Delivery progress</span><span>${p.progress}%</span></div><div class="bar"><div style=${`width: ${p.progress}%`}></div></div><div class="dashboard-next"><span class="fs12 muted">NEXT STEP</span><p class="fs14">${p.next}</p></div>${p.attention && html`<span class="fs12 coral">${p.attention}</span>`}</article>`)}</div>
@@ -1644,7 +1701,7 @@ class App extends Component {
     const money = (n) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(n);
     const finance = this.state.data.links.find((l) => l.name === 'Finance')?.url;
     return html`<main class="main dashboard">
-      ${this.dashboardHeader('Finance', 'Your money at a glance. Budgets, cash flow and what needs a look.', 'Finance')}
+      ${this.dashboardHeader('Finance', 'Your money at a glance. Budgets, cash flow and what needs a look.', 'Finance', 'finance')}
       <div class="between wrap"><span class="fs13 dim">Personal overview · November 2026 · AUD</span><span class="fs12 muted">Illustrative month</span></div>
       <div class="dashboard-metrics">
         ${this.dashboardMetric('Cash balance', money(f.balance), 'Across everyday & savings')}
@@ -1655,7 +1712,7 @@ class App extends Component {
       <div class="dashboard-columns"><section class="tile panel dashboard-resume"><span class="fs12 steel">MONTHLY POSITION</span><h2>${money(f.income - f.spent)} ahead</h2><p class="muted">Income less spending in this sample month.</p><div class="dashboard-cash-row"><span>Income</span><meter min="0" max=${f.income} value=${f.income} aria-label="Monthly income"></meter><strong>${money(f.income)}</strong></div><div class="dashboard-cash-row"><span>Spending</span><meter min="0" max=${f.income} value=${f.spent} aria-label="Monthly spending"></meter><strong>${money(f.spent)}</strong></div><div class="dashboard-next"><span class="fs12 muted">COMING UP</span><p>${money(f.bills.reduce((sum, b) => sum + b.amount, 0))} in upcoming bills</p><span class="fs13 muted">Keep room in your everyday account for the next payments.</span></div></section>
       <section class="tile panel"><div class="between"><h2 class="card-title">Budget breakdown</h2><span class="fs12 muted">Spent / planned</span></div>${f.categories.map((c) => html`<div class="col" style="gap: 7px;"><div class="between fs13"><span>${c.name}</span><span class="muted">${money(c.spent)} / ${money(c.budget)}</span></div><meter class="dashboard-budget" min="0" max=${c.budget} value=${c.spent} aria-label=${`${c.name} budget used`}></meter></div>`)}</section></div>
       <div class="dashboard-columns"><section class="tile panel"><div class="between"><h2 class="card-title">Recent transactions</h2><span class="fs12 muted">Sample ledger</span></div>${f.transactions.map((t) => html`<div class="dashboard-list-row between"><div class="col"><span>${t.name}</span><span class=${`fs12 ${t.category === 'To categorise' ? 'coral' : 'muted'}`}>${t.date} · ${t.category}</span></div><strong class=${t.amount > 0 ? 'steel' : 'soft'}>${t.amount > 0 ? '+' : '−'}${Math.abs(t.amount).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}</strong></div>`)}</section>
-      <section class="tile panel"><h2 class="card-title">Upcoming bills</h2>${f.bills.map((b) => html`<div class="dashboard-list-row between"><div class="col"><span>${b.name}</span><span class="fs12 muted">Due ${b.due}</span></div><strong>${money(b.amount)}</strong></div>`)}<span class="fs12 muted">Planned payments · no payments scheduled by HQ</span></section></div>
+      <section class="tile panel"><h2 class="card-title">Upcoming bills</h2>${f.bills.map((b) => html`<div class="dashboard-list-row between"><div class="col"><span>${b.name}</span><span class="fs12 muted">Due ${b.due}</span></div><strong>${money(b.amount)}</strong></div>`)}<span class="fs12 muted">Planned payments · no payments scheduled by moniqr</span></section></div>
       <section class="tile panel"><div class="between wrap"><div class="col" style="gap: 6px;"><h2 class="card-title">A little housekeeping</h2><p class="muted">1 sample transaction needs a category. Review your ledger, budgets and personal or business reports in Finance.</p></div><a class="btn btn-secondary" href=${finance}>Review in Finance ↗</a></div></section>
     </main>`;
   }
@@ -1671,11 +1728,11 @@ class App extends Component {
       <main class="main">
         <article class="briefing">
           <div class="col" style="gap: 10px;">
-            <button class="btn btn-ghost" style="align-self: flex-start;" onClick=${back}>← Back to HQ</button>
+            <button class="btn btn-ghost" style="align-self: flex-start;" onClick=${back}>← Back to dashboard</button>
             ${brief
-              ? html`<span class="fs13 muted">${brief.kind} · prepared by Moniqr ${brief.when}</span>
+              ? html`<span class="fs13 muted">${brief.kind} · prepared by Moniqr ${brief.when} ${src('brief')}</span>
                   <h1>${brief.summary || 'Your brief'}</h1>`
-              : html`<span class="fs13 muted">No brief from the EA yet · sample briefing</span>
+              : html`<span class="fs13 muted">No brief from the EA yet ${src('briefFallback')}</span>
                   <h1>${fallback.title}</h1>
                   <p class="lede">${fallback.lede}</p>`}
           </div>
@@ -1700,7 +1757,7 @@ class App extends Component {
                 </section>
               `}
           <section class="col" style="gap: 10px;">
-            <h2>Executive Assistant</h2>
+            <h2>Executive Assistant ${src('runs', data.agentsError && 'Offline')}</h2>
             ${data.agentsError && html`<p class="fs14 coral">The agent service isn't reachable right now.</p>`}
             <div class="row wrap">
               <button class="btn btn-primary" disabled=${busy} onClick=${() => this.runEa('morning_brief')}>${busy ? 'EA is running…' : 'Run EA now'}</button>
@@ -1721,7 +1778,7 @@ class App extends Component {
           </section>
           <div class="row wrap">
             <button class="btn btn-primary" onClick=${() => this.send('Walk me through this briefing')}>Ask Moniqr about this</button>
-            <button class="btn btn-secondary" onClick=${back}>Back to HQ</button>
+            <button class="btn btn-secondary" onClick=${back}>Back to dashboard</button>
           </div>
         </article>
       </main>
@@ -1740,7 +1797,7 @@ class App extends Component {
           <span class="m-mark">M</span>
           <div class="col grow">
             <span id="moniqr-chat-title" class="fs15 bright" style="font-weight: 500;">Moniqr</span>
-            <span class="fs12 muted">Sample chat · ${thinking ? 'drafting…' : 'preview'}</span>
+            <span class="fs12 muted">${src('chat', null, 'flush')} ${thinking ? 'drafting…' : 'preview'}</span>
           </div>
           <button type="button" class="btn sm btn-ghost" aria-label="Close chat" onClick=${() => this.setState({ chatOpen: false })}>Close</button>
         </div>

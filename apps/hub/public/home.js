@@ -1,7 +1,7 @@
 // Home, the landing page from the moniqr design system: a greeting, the energy orb with today's
 // items orbiting it, the latest brief and what's waiting on Bailey. Everything shown is live:
 // today's Google Calendar events, today's brief and pending Moniqr proposals. Nothing here
-// approves or sends anything; review buttons open Action review in HQ.
+// approves or sends anything; review buttons open Action review on the dashboard.
 import { Component, html } from '/vendor/preact-htm.js';
 import { calendarLayers } from './calendar-overlay.js';
 import './energy-orb.js';
@@ -74,7 +74,7 @@ export function todayItems(data, nowMs) {
     const start = Date.parse(r.start), end = Date.parse(r.end);
     if (!(start < dayEnd && end > dayStart)) continue;
     items.push({ key: `r${r.actionId}`, h: Math.max(0, (start - dayStart) / 3_600_000), end, icon: 'plus', hue: 340, agent: 'Moniqr request',
-      label: r.title, short: r.title, sub: 'Needs your review', detail: `${r.calendar}. Review it in HQ before anything is added to your calendar.`,
+      label: r.title, short: r.title, sub: 'Needs your review', detail: `${r.calendar}. Review it on the dashboard before anything is added to your calendar.`,
       review: true, actionId: r.actionId, open: 'actions' });
   }
   items.sort((a, b) => a.h - b.h);
@@ -198,10 +198,10 @@ export class Home extends Component {
       : `${briefToday ? 'Your brief is ready' : 'No brief yet today'}, ${left ? `${left} thing${left === 1 ? '' : 's'} still on the calendar` : 'nothing else on the calendar'} and ${pending ? `${pending} waiting on your yes` : 'nothing waiting on you'}.`;
     const dateLabel = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(now));
     const open = (x) => go(x.open === 'briefing' ? 'briefing' : 'hq', x.open === 'actions' ? 'actions' : x.open === 'calendar' ? 'calendar' : null, x.actionId);
-    const tabs = locked ? ['Home', 'HQ', 'Inbox', 'Projects', 'Finance'].map((label, i) =>
+    const tabs = locked ? ['Home', 'Dashboard', 'Inbox', 'Projects', 'Finance'].map((label, i) =>
       ({ label: i ? '****' : label, on: !i, aria: i ? 'Sign in to open' : null, go: i ? this.openSignIn : () => {} })) : [
       { label: 'Home', on: true, go: () => {} },
-      { label: 'HQ', go: () => go('hq') },
+      { label: 'Dashboard', go: () => go('hq') },
       { label: 'Inbox', count: unread, go: () => go('inbox') },
       { label: 'Projects', go: () => go('projects') },
       { label: 'Finance', go: () => go('finance') },
@@ -242,7 +242,7 @@ export class Home extends Component {
                 <span class="t"><i style=${`background: ${col(210)};`}></i>Your latest brief</span>
                 ${locked ? bars([92, 78, 54]) : data.brief
                   ? html`<p class="clamp3">${data.brief.summary || 'Open it to read the full brief.'}</p><span class="meta">${data.brief.kind} · ${data.brief.when}</span>`
-                  : html`<p>No brief yet. Run the EA from HQ and it will appear here.</p>`}
+                  : html`<p>No brief yet. Run the EA from the dashboard and it will appear here.</p>`}
               </button>
 
               <div class=${`orb${this.drag ? ' dragging' : ''}`} ref=${this.orbRef} onPointerDown=${this.dragStart} onClick=${this.orbClick}
@@ -285,7 +285,7 @@ export class Home extends Component {
 
               <button type="button" class="home-card right" onClick=${() => go('hq', 'actions')}>
                 <span class="t"><i style="background: var(--accent-dot);"></i>Waiting on you</span>
-                ${locked ? bars([88, 70, 40]) : data.actionsError ? html`<p>Proposals couldn’t load. HQ retries automatically.</p>`
+                ${locked ? bars([88, 70, 40]) : data.actionsError ? html`<p>Proposals couldn’t load. The dashboard retries automatically.</p>`
                   : pending ? html`<p>${pending} proposal${pending === 1 ? '' : 's'} to review${pendingItems.length ? ': ' + pendingItems.slice(0, 3).map((a) => a.title).join(', ') : ''}. Nothing goes out until you say so.</p>`
                   : html`<p>Nothing needs your yes right now.</p>`}
                 ${!locked && html`<span class="meta">Action review</span>`}

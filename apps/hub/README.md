@@ -1,24 +1,26 @@
 # Hub
 
-The moniqr web app at the root of moniqr.com. It opens on **Home**, the landing page from the *Moniqr design system* project in Claude Design (`Landing Page.dc.html`), with **HQ**, **Inbox**, Projects and Finance a tab away in the top bar.
+The moniqr web app at the root of moniqr.com. It opens on **Home**, the landing page from the *Moniqr design system* project in Claude Design (`Landing Page.dc.html`), with the **Dashboard**, **Inbox**, Projects and Finance a tab away in the top bar.
 
 ## Home and themes
 
-Home greets Bailey over an animated backdrop (silk night in dark mode, warm sunrise in light mode) with the energy orb (`public/energy-orb.js`, a canvas sphere you can drag to turn). Today's items orbit it: today's brief, today's Google Calendar events and dated Moniqr calendar requests, all live. Clicking an item shows its details, ←/→ step through them and the orb or *Read today's list* opens the day as a list. The brief and *Waiting on you* cards open the briefing and Action review in HQ. Home never approves anything; a request's **Review** button opens it in Action review.
+Home greets Bailey over an animated backdrop (silk night in dark mode, warm sunrise in light mode) with the energy orb (`public/energy-orb.js`, a canvas sphere you can drag to turn). Today's items orbit it: today's brief, today's Google Calendar events and dated Moniqr calendar requests, all live. Clicking an item shows its details, ←/→ step through them and the orb or *Read today's list* opens the day as a list. The brief and *Waiting on you* cards open the briefing and Action review on the dashboard. Home never approves anything; a request's **Review** button opens it in Action review.
 
 The whole app follows the design system's colours: cream and paper with a peach action colour in light mode, indigo night with a violet action colour in dark mode, and an indigo sidebar in both. It starts from the device setting; clicking the moniqr logo (on Home or in the sidebar) switches, flipping the logo as the icons swap, and the choice is remembered in that browser. Moving between Home and another page animates (switching among the other pages is instant): going out from Home the new page expands as a circle from the top-left corner, and coming back to Home the page collapses into that corner (View Transitions API, where the browser supports it), then its sections rise into place one after another. Nothing animates with reduced motion.
 
 Signed out, `/login` is Home in the design's locked state (`public/locked.js`): the same backdrop and orb, but the tabs read `****`, the cards and orb items are redacted bars, and every control opens the sign-in panel. It loads no data; the page's code, styles and icons are the only open files, and the app script (`hq.js`) and everything under `/api/` still need a session. Without JavaScript a plain sign-in card does the same job.
 
-## HQ
+## Dashboard
 
-HQ, the command centre, built from the *Personal OS – HQ v4* design: brief carousel, today's key decision, priorities, news, mood, action review, week calendar, habits, food, people, markets, projects and the Moniqr chat panel. All Moniqr-related apps live on subdomains (the budgeting app at finance.moniqr.com) behind their own login (Cloudflare Access for now).
+The dashboard (formerly HQ), the command centre, built from the *Personal OS – HQ v4* design: brief carousel, today's key decision, priorities, news, mood, action review, week calendar, habits, food, people, markets, projects and the Moniqr chat panel. All Moniqr-related apps live on subdomains (the budgeting app at finance.moniqr.com) behind their own login (Cloudflare Access for now).
 
 It is a thin client of the agent API. The Express server sends a page shell, `public/hq.js` and `public/hq.css`, and `/api/hq` with everything the page draws. The page is Preact + htm, served as one ES module from `node_modules` (`/vendor/preact-htm.js`), so there's no client build step. The agent API token stays on the server.
 
 ## Real and sample data
 
-The Projects and Finance sidebar buttons open dashboards inside HQ. Projects shows sample resume context, attention items, filterable project cards and recent activity inspired by Stack. Finance shows sample balances, cash flow, budgets, transactions and bills. Both dashboards are labelled as design previews; they do not fetch live Stack or Finance data. Explicit **Open Stack** and **Open Finance** links lead to the full apps.
+Every card carries a **Live** badge (green dot) or a **Sample** badge (dashed outline, and the card itself gets a dashed border). Hovering a badge says where the data comes from. A live badge turns red and reads *Down*, *Offline* or *Not connected* when its source is failing. The top bar's **Hide samples** button removes the sample cards, the sample carousel slides and the placeholder agents, leaving only what's wired; the choice is remembered in that browser. Which card is which lives in one place, `SOURCES` at the top of `public/hq.js`: when a card gets wired to real data, flip its entry to `live`.
+
+The Projects and Finance sidebar buttons open pages beside the dashboard. Projects shows sample resume context, attention items, filterable project cards and recent activity inspired by Stack. Finance shows sample balances, cash flow, budgets, transactions and bills. Both pages are marked as sample data; they do not fetch live Stack or Finance data. Explicit **Open Stack** and **Open Finance** links lead to the full apps.
 
 When checking a live UI change, verify the running hub's assets after deployment. A successful push to `main` does not establish that Dokploy rebuilt the hub. The hub needs `HUB_SESSION_SECRET`, `HUB_ALLOWED_EMAILS` and a sign-in method (`HUB_PASSCODE` and/or the `HUB_GOOGLE_*` pair) in Dokploy's environment, or it won't start.
 
@@ -42,7 +44,7 @@ moniqr.com has its own sign-in page at `/login`, with no Cloudflare Access in fr
 
 Either way the hub sets a 30-day `__Host-moniqr_session` cookie (HttpOnly, Secure, SameSite=Lax), signed with `HUB_SESSION_SECRET`. Every request re-checks the allow list, so removing an email locks it out, and rotating the secret signs everyone out. **Sign out** in the top bar clears the cookie.
 
-Pages opened without a session redirect to `/login` and return to the same page after sign-in. Data requests get a 401, and HQ reloads to the login page. `/health`, `/login`, `/login.css`, the signed-out page's files (`locked.js`, `home.js`, `theme.js`, `energy-orb.js`, `calendar-overlay.js`, `hq.css`, Preact and the brand icons) and the Google callback are the only open routes. The security code, run requests, finding and action decisions, and sign-out accept only posts whose `Origin` is the hub itself. Scripts and images load only from the hub, nothing runs inline, and the one third party is Google Fonts for Barlow.
+Pages opened without a session redirect to `/login` and return to the same page after sign-in. Data requests get a 401, and the dashboard reloads to the login page. `/health`, `/login`, `/login.css`, the signed-out page's files (`locked.js`, `home.js`, `theme.js`, `energy-orb.js`, `calendar-overlay.js`, `hq.css`, Preact and the brand icons) and the Google callback are the only open routes. The security code, run requests, finding and action decisions, and sign-out accept only posts whose `Origin` is the hub itself. Scripts and images load only from the hub, nothing runs inline, and the one third party is Google Fonts for Barlow.
 
 Cloudflare Access doesn't cover moniqr.com or www. It still protects the other subdomains, such as finance.moniqr.com, which don't use this login.
 

@@ -1,6 +1,6 @@
 // Design fixtures only: no connection to Stack or Finance accounts.
 export const projectSamples = [
-  { name: 'Moniqr', category: 'Personal OS', status: 'Building', progress: 55, next: 'Finish the Projects and Finance overview', note: 'HQ navigation and dashboard layout are ready to review.', activity: 'Dashboard mockups updated', when: '2 hours ago', attention: 'Needs review' },
+  { name: 'Moniqr', category: 'Personal OS', status: 'Building', progress: 55, next: 'Finish the Projects and Finance overview', note: 'Dashboard navigation and layout are ready to review.', activity: 'Dashboard mockups updated', when: '2 hours ago', attention: 'Needs review' },
   { name: 'Stack', category: 'Developer tools', status: 'Live', progress: 78, next: 'Review the next delivery milestone', note: 'Resume context, project boards and activity in one place.', activity: 'Session checkpoint saved', when: 'Yesterday', attention: '' },
   { name: 'Finance', category: 'Personal & business', status: 'Building', progress: 40, next: 'Review transaction categorisation', note: 'Budgets, bank transactions and financial reporting.', activity: 'Budget categories refined', when: '2 days ago', attention: 'Blocked' },
 ];

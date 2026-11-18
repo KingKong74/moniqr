@@ -319,7 +319,7 @@ export function createApp(opts: HubOptions) {
       return;
     }
     const queued = await opts.agents.queueRun(kind);
-    // The page posts with fetch and refreshes itself; a plain form post lands back on HQ.
+    // The page posts with fetch and refreshes itself; a plain form post lands back on the dashboard.
     if (req.accepts(['html', 'json']) === 'json') res.json({ existing: queued?.existing === true });
     else res.redirect(303, '/');
   });

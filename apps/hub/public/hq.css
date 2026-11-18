@@ -23,6 +23,7 @@
   --shadow: rgb(37 31 27 / 0.14);
   --font-body: "Barlow", system-ui, sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --live: oklch(0.52 0.14 150);
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -43,6 +44,7 @@
   --wash-8: rgb(238 238 250 / 0.08);
   --nav-bg: #0a0b1a;
   --shadow: rgb(0 0 0 / 0.55);
+  --live: oklch(0.78 0.14 150);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -96,7 +98,21 @@ input::placeholder { color: var(--n500); }
 .tag { font-size: 10px; padding: 1px 7px; border-radius: 8px; white-space: nowrap; }
 .bar { height: 4px; border-radius: 2px; background: var(--wash-8); overflow: hidden; }
 .bar > div { height: 100%; border-radius: 2px; background: var(--accent); }
-.sample { font-size: 11px; padding: 2px 8px; border-radius: 9px; border: 1px dashed var(--n600); color: var(--n400); white-space: nowrap; cursor: help; }
+/* Data source badges: Live cards read real data; Sample cards are placeholders until they're wired. */
+.src { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; padding: 1px 7px; border-radius: 8px; border: 1px solid transparent; font-size: 10px; font-weight: 600; letter-spacing: .05em; line-height: 1.5; text-transform: uppercase; white-space: nowrap; vertical-align: middle; cursor: help; }
+.src::before { content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.src.live { color: var(--live); background: color-mix(in srgb, var(--live) 14%, transparent); }
+.src.live::before { background: var(--live); }
+.src.live.down { color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 12%, transparent); }
+.src.live.down::before { background: var(--accent-2); }
+.src.sample { color: var(--n400); border: 1px dashed var(--n600); }
+.src.sample::before { border: 1px solid var(--n500); }
+.src.flush { margin-left: 0; }
+.is-sample { box-shadow: none !important; outline: 1px dashed var(--n600); outline-offset: -1px; }
+.src-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 10px; border: 1px solid var(--divider); background: transparent; color: var(--n400); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.src-toggle .src { margin-left: 0; cursor: inherit; }
+.src-toggle:hover { color: var(--n100); background: var(--wash-6); }
+.src-toggle[aria-pressed="true"] { color: var(--n100); border-color: var(--live); }
 .signout { margin: 0; }
 .signout-btn { cursor: pointer; font-family: inherit; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--divider); background: transparent; color: var(--n400); white-space: nowrap; }
 .signout-btn:hover { color: var(--n100); background: var(--wash-6); }
@@ -118,7 +134,7 @@ input::placeholder { color: var(--n500); }
 .shell { min-height: 100vh; display: flex; }
 .nav { width: 216px; flex-shrink: 0; display: flex; flex-direction: column; gap: 28px; padding: 22px 14px; background: var(--nav-bg); color: var(--n200);
   --n100: #fffcf8; --n200: rgb(255 252 248 / 0.86); --n300: rgb(255 252 248 / 0.78); --n400: rgb(255 252 248 / 0.64); --n500: rgb(255 252 248 / 0.5); --n600: rgb(255 252 248 / 0.32);
-  --wash-6: rgb(255 252 248 / 0.06); --wash-8: rgb(255 252 248 / 0.12); }
+  --wash-6: rgb(255 252 248 / 0.06); --wash-8: rgb(255 252 248 / 0.12); --live: oklch(0.78 0.14 150); }
 .brand-mark { position: relative; width: 30px; height: 30px; flex-shrink: 0; display: block; }
 .brand-mark img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; transition: opacity 500ms; }
 .brand-mark .ic-dark { opacity: 0; }
@@ -279,7 +295,9 @@ input::placeholder { color: var(--n500); }
   .nav .items { flex-direction: row !important; }
   .nav-item { padding: 6px 10px; white-space: nowrap; }
   .topbar { padding: 10px 16px; gap: 12px; flex-wrap: wrap; }
-  .topbar .clock, .topbar .sample { display: none; }
+  .topbar .clock { display: none; }
+  .src-toggle .src { display: none; }
+  .src-toggle { padding-left: 10px; }
   .topbar .search { order: 9; width: 100%; }
   .topbar > div:has(> .search) { order: 9; flex-basis: 100%; }
   .main { padding: 12px 16px 48px; gap: 28px; }
@@ -292,7 +310,7 @@ input::placeholder { color: var(--n500); }
   .slide { transition: none; }
 }
 
-/* Projects and Finance previews share the HQ surfaces and colour tokens. */
+/* Projects and Finance previews share the dashboard surfaces and colour tokens. */
 button.nav-item { width: 100%; border: 0; background: transparent; font-family: inherit; text-align: left; }
 button.nav-item.on { background: var(--wash-8); }
 button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
