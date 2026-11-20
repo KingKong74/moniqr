@@ -1,6 +1,7 @@
-// Backlog, from the "Moniqr backlog redesign" Claude Design project. Two views of the same list:
-// Stack shows one card on top with the rest fanned underneath (← → flick through them), and
-// Piles shows Backlog → Next → Doing → Done as four columns. Every item is the owner's own and
+// Backlog, from the "Moniqr backlog redesign" Claude Design project: one card on top with the
+// rest fanned underneath (← → flick through them), beside the whole stack grouped by status. On
+// a big enough screen the page fits the window and only the list and the top card scroll
+// inside themselves; smaller screens scroll as usual. Every item is the owner's own and
 // every change is saved straight away through the hub's same-origin /backlog routes. The EA can
 // read open items in briefs but never changes them. The "Suggested" card is a simple rule
 // (highest priority, then oldest, in the Backlog pile), worked out here, not by the EA.
@@ -23,8 +24,6 @@ const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce
 const isTyping = (el) => /INPUT|TEXTAREA|SELECT/.test(el?.tagName ?? '') || el?.isContentEditable;
 const STALE_DAYS = 14;
 
-const readLayout = () => { try { return localStorage.getItem('moniqr.backlogLayout') === 'piles' ? 'piles' : 'stack'; } catch { return 'stack'; } };
-const saveLayout = (v) => { try { localStorage.setItem('moniqr.backlogLayout', v); } catch {} };
 
 /** Apply a change locally, the same way the agent API will, so the page responds at once. */
 function applyLocal(items, id, patch) {
@@ -38,7 +37,7 @@ function applyLocal(items, id, patch) {
 
 export class Backlog extends Component {
   state = {
-    items: null, error: '', layout: readLayout(), draft: '', pri: 'normal', adding: false,
+    items: null, error: '', draft: '', pri: 'normal', adding: false,
     cursor: 0, filter: null, showDone: false, openId: null, dismissed: [],
     stepDraft: '', topStepDraft: '', titleDraft: null, notesDraft: null,
   };
@@ -46,20 +45,31 @@ export class Backlog extends Component {
   queue = Promise.resolve();
   topRef = (el) => (this.topEl = el);
   dialogRef = (el) => (this.dialogEl = el);
+  pageRef = (el) => (this.pageEl = el);
+
+  /** The height left below the top bar, so the page can fit the window. Ignores the view-change transform. */
+  fit = () => {
+    let top = 0;
+    for (let el = this.pageEl; el; el = el.offsetParent) top += el.offsetTop;
+    this.pageEl?.style.setProperty('--bl-h', `${Math.max(0, window.innerHeight - top)}px`);
+  };
 
   componentDidMount() {
     this.load();
     this.onKey = (e) => {
       if (e.key === 'Escape' && this.state.openId) return this.closeDetail();
-      if (this.state.openId || this.state.layout !== 'stack' || isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (this.state.openId || isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'ArrowRight') { e.preventDefault(); this.flick(1); }
       if (e.key === 'ArrowLeft') { e.preventDefault(); this.flick(-1); }
     };
     window.addEventListener('keydown', this.onKey);
+    window.addEventListener('resize', this.fit);
+    this.fit();
   }
 
   componentWillUnmount() {
     window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('resize', this.fit);
     this.flushDetail();
   }
 
@@ -138,8 +148,6 @@ export class Backlog extends Component {
     finally { this.setState({ adding: false }); }
   }
 
-  setLayout(layout) { saveLayout(layout); this.setState({ layout }); }
-
   /** Flick the top card away and bring the next one up (d > 0) or the previous one back (d < 0). */
   flick(d) {
     const el = this.topEl;
@@ -161,6 +169,7 @@ export class Backlog extends Component {
   }
 
   componentDidUpdate(_props, prev) {
+    if (!prev.items && this.state.items) this.fit();
     const d = this.flickDir;
     this.flickDir = 0;
     if (d && this.topEl?.animate) {
@@ -196,7 +205,7 @@ export class Backlog extends Component {
   }
 
   render() {
-    const { items, error, layout } = this.state;
+    const { items, error } = this.state;
     const head = html`<div class="bl-head">
         <div class="bl-intro">
           <span class="fs12 muted">PERSONAL</span>
@@ -210,19 +219,16 @@ export class Backlog extends Component {
         </div>`}
       </div>`;
     if (!items) {
-      return html`<main class="main bl-page">${head}
+      return html`<main class="main bl-page" ref=${this.pageRef}>${head}
         ${error ? html`<p class="coral">${error}</p><div><button class="btn btn-secondary" onClick=${() => { this.setState({ error: '' }); this.load(); }}>Retry</button></div>` : html`<p class="muted">Loading backlog…</p>`}
       </main>`;
     }
-    return html`<main class="main bl-page">
+    return html`<main class="main bl-page" ref=${this.pageRef}>
       ${head}
       ${this.renderSegments()}
       ${this.renderAdd()}
       <div class="bl-status-line" role="status" aria-live="polite">${error && html`<p class="coral">${error}</p>`}</div>
-      ${layout === 'piles' ? this.renderPiles() : this.renderStack()}
-      <div class="bl-layouts" role="group" aria-label="Backlog layout">
-        ${[['stack', 'Stack'], ['piles', 'Piles']].map(([id, label]) => html`<button type="button" aria-pressed=${layout === id} onClick=${() => this.setLayout(id)}>${label}</button>`)}
-      </div>
+      ${this.renderStack()}
       ${this.renderDetail()}
     </main>`;
   }
@@ -285,12 +291,12 @@ export class Backlog extends Component {
       .sort((a, b) => PRI_RANK[b.priority] - PRI_RANK[a.priority] || Date.parse(a.created_at) - Date.parse(b.created_at))[0];
     const age = sug && daysSince(sug.created_at);
 
-    const tabs = beneath.slice(0, 5);
+    const tabs = beneath.slice(0, 4);
     return html`<div class="bl-stack-grid">
       <section class="bl-col" aria-label="On top">
         <div class="row">
           <span class="grow bl-eyebrow">ON TOP</span>
-          <span class="fs12 muted">${n ? `${cur + 1} / ${n}` : ''}</span>
+          <span class="fs12 muted">${n ? `${cur + 1} / ${n}` : ''}<span class="bl-keys"> · ← → to flick</span></span>
           <button type="button" class="bl-icon-btn" disabled=${n < 2} onClick=${() => this.flick(-1)} title="Previous (←)" aria-label="Previous card">‹</button>
           <button type="button" class="bl-icon-btn" disabled=${n < 2} onClick=${() => this.flick(1)} title="Next (→)" aria-label="Next card">›</button>
         </div>
@@ -301,6 +307,7 @@ export class Backlog extends Component {
               <span class="bl-pri"><span class=${`bl-dot p-${top.priority}`}></span>${cap(top.priority)} priority</span>
             </div>
             <h2 class="bl-top-title">${top.title}</h2>
+            <div class="bl-top-body">
             <p class=${`bl-top-notes ${top.notes ? '' : 'empty'}`}>${top.notes || 'No notes yet. Add the context you’ll need when you pick this up.'}</p>
             <div class="bl-steps-box">
               <div class="row bl-steps-head"><span class="bl-label">Steps</span><div class="bar grow"><div style=${{ width: `${progress(top)}%` }}></div></div><span class="fs12 dim">${top.steps.length ? `${stepsDone(top)}/${top.steps.length} steps` : 'No steps'}</span></div>
@@ -315,7 +322,7 @@ export class Backlog extends Component {
                 </form>
               </div>
             </div>
-            <div class="grow"></div>
+            </div>
             <div class="row wrap bl-top-actions">
               ${top.status === 'doing'
                 ? html`<button type="button" class="btn btn-primary" onClick=${() => this.finish(top.id)}>Mark done</button>`
@@ -325,12 +332,12 @@ export class Backlog extends Component {
               <button type="button" class="btn sm btn-secondary" onClick=${() => this.open(top.id)}>Open card ↗</button>
             </div>
           </article>
-          ${tabs.map((it, k) => k < 3
+          ${tabs.map((it, k) => k < 2
             ? html`<button type="button" class=${`bl-under u${k}`} onClick=${() => this.flick(k + 1)} aria-label=${`Bring up ${it.title}`}>
                 <span class="ellipsis grow">${it.title}</span><span class="bl-under-status">${LBL[it.status]}</span>
               </button>`
             : html`<div class=${`bl-under u${k}`} aria-hidden="true"></div>`)}
-          <span class="fs12 muted bl-beneath">${beneath.length ? `${beneath.length} more underneath` : 'Nothing underneath'}<span class="bl-keys"> · ← → to flick</span></span>
+          <span class="fs12 muted bl-beneath">${beneath.length ? `${beneath.length} more underneath` : 'Nothing underneath'}</span>
         </div>` : html`<div class="bl-empty">The stack is clear. Add something above when it comes to mind.</div>`}
 
         <div class="tile bl-health">
@@ -349,7 +356,7 @@ export class Backlog extends Component {
       </section>
 
       <section class="bl-col bl-right">
-        <div class="col" style="gap: 10px;">
+        <div class="col bl-list-wrap">
           <div class="row">
             <span class="grow bl-eyebrow">${showDone ? 'CLEARED' : filt ? filt.title : 'THE WHOLE STACK'}</span>
             ${filt || showDone
@@ -405,45 +412,6 @@ export class Backlog extends Component {
           </div>
         </div>`}
       </section>
-    </div>`;
-  }
-
-  renderPiles() {
-    const { items } = this.state;
-    const HINT = { backlog: 'Everything you’ve captured', next: 'Lined up, in order', doing: 'Your focus right now', done: 'Cleared' };
-    const ACTION = { backlog: ['Queue it', this.queueUp], next: ['Start', this.start], doing: ['Mark done', this.finish] };
-    return html`<div class="bl-piles">
-      ${ORDER.map((k, i) => {
-        const list = items.filter((it) => it.status === k);
-        const [top, ...rest] = list;
-        const action = ACTION[k];
-        return html`<section class=${`bl-pile s-${k}`} aria-label=${LBL[k]}>
-          <div class="col" style="gap: 8px;">
-            <div class="row" style="align-items: baseline;">
-              <span class="fs11 bl-faint">0${i + 1}</span>
-              <h3 class="grow">${LBL[k]}</h3>
-              <span class="bl-pile-count">${list.length}</span>
-              ${i < 3 && html`<span class="bl-faint" aria-hidden="true">→</span>`}
-            </div>
-            <div class=${`bl-pile-bar s-${k}`}></div>
-            <span class="fs12 muted">${HINT[k]}</span>
-          </div>
-          ${top ? html`<div class="bl-pile-deck">
-            <article class="bl-pile-top">
-              <span class="bl-pri"><span class=${`bl-dot p-${top.priority}`}></span>${cap(top.priority)}</span>
-              <h4><button type="button" class="bl-link" onClick=${() => this.open(top.id)}>${top.title}</button></h4>
-              ${top.notes && html`<p class="fs13 dim clamp3">${top.notes}</p>`}
-              ${action && html`<div class="row"><button type="button" class=${`btn sm ${k === 'doing' ? 'btn-primary' : 'btn-secondary'}`} onClick=${() => action[1](top.id)}>${action[0]}</button></div>`}
-            </article>
-            ${[1, 2, 3].filter((e) => list.length > e).map((e) => html`<div class=${`bl-pile-under e${e}`} aria-hidden="true"></div>`)}
-          </div>` : html`<div class="bl-pile-empty">${k === 'doing' ? 'Nothing in focus. Start one from Next.' : 'Empty'}</div>`}
-          <div class="col" style="gap: 2px;">
-            ${rest.map((it) => html`<button type="button" class="bl-pile-row" onClick=${() => this.open(it.id)}>
-              <span class=${`bl-dot p-${it.priority}`}></span><span class=${`ellipsis ${k === 'done' ? 'done' : ''}`}>${it.title}</span>
-            </button>`)}
-          </div>
-        </section>`;
-      })}
     </div>`;
   }
 
@@ -503,7 +471,7 @@ export class Backlog extends Component {
         </div>
         <div class="row wrap bl-dialog-foot">
           <button type="button" class="btn btn-primary" onClick=${primary[1]}>${primary[0]}</button>
-          ${it.status !== 'done' && html`<button type="button" class="btn btn-secondary" onClick=${() => { const k = active.findIndex((i) => i.id === it.id); this.flushDetail(); this.setState({ cursor: k, openId: null, layout: 'stack' }); saveLayout('stack'); }}>Show on top</button>`}
+          ${it.status !== 'done' && html`<button type="button" class="btn btn-secondary" onClick=${() => { const k = active.findIndex((i) => i.id === it.id); this.flushDetail(); this.setState({ cursor: k, openId: null }); }}>Show on top</button>`}
           <span class="grow"></span>
           <span class="fs12 bl-faint bl-keys">Esc to close</span>
         </div>
