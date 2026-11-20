@@ -216,6 +216,7 @@ class MoniqrConsole extends Component {
   // Drag the console by its title bar.
   onGrab = (e) => {
     if (e.button !== 0 || (e.target instanceof Element && e.target.closest('button'))) return;
+    if (matchMedia('(max-width: 760px)').matches) return; // full screen on phones, nothing to drag
     const panel = e.currentTarget.parentElement.getBoundingClientRect();
     const dx = e.clientX - panel.left, dy = e.clientY - panel.top;
     const move = (ev) => this.setState({ pos: {

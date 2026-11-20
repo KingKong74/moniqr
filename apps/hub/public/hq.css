@@ -323,6 +323,19 @@ input::placeholder { color: var(--n500); }
 .mq-input:focus-within { background: rgb(238 238 250 / 0.03); }
 .mq-send { width: 30px; height: 26px; border: 1px solid var(--mq-line); border-radius: 6px; background: transparent; color: var(--mq-accent); font: inherit; cursor: pointer; }
 .mq-send:disabled { opacity: 0.35; cursor: default; }
+/* Phones: the console takes over the whole screen, clear of the notch and home bar. 16px text stops iOS
+   zooming in when the input is focused. Dragging is off here (console.js), and the page behind can't scroll. */
+@media (max-width: 760px) {
+  .mq-console { inset: 0 !important; width: auto; height: 100dvh; border: 0; border-radius: 0; box-shadow: none; font-size: 14px; animation: mq-rise 200ms var(--ease); }
+  .mq-bar { padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left)); cursor: default; }
+  .mq-btn { padding: 8px 12px; font-size: 14px; }
+  .mq-log { padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)); }
+  .mq-input { padding: 12px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  .mq-input input { font-size: 16px; }
+  .mq-send { width: 40px; height: 36px; }
+  html:has(.mq-console), html:has(.mq-console) body { overflow: hidden; }
+}
+@keyframes mq-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
 .mq-console ::selection { background: color-mix(in srgb, var(--mq-accent) 40%, transparent); }
 @keyframes mq-pop { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes mq-pulse { 50% { opacity: 0.35; } }
@@ -343,7 +356,6 @@ input::placeholder { color: var(--n500); }
   .main { padding: 12px 16px 48px; gap: 28px; }
   .slide h1 { font-size: 24px; }
   .briefing h1 { font-size: 28px; }
-  .mq-console { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); height: min(460px, calc(100dvh - 32px)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
