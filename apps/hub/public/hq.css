@@ -825,8 +825,8 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 }
 
 /* The brief page (briefing.js), option 2a of the briefing redesign. */
-.bf-page { max-width: 1120px; gap: 36px; padding-bottom: 40px; }
-.bf-hero { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 32px; align-items: stretch; }
+.bf-page { gap: 36px; padding-bottom: 40px; }
+.bf-hero { display: grid; grid-template-columns: minmax(0, 1fr) clamp(420px, 34%, 560px); gap: 32px; align-items: stretch; }
 .bf-head { display: flex; flex-direction: column; gap: 12px; justify-content: center; min-width: 0; }
 .bf-crumb { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--n500); }
 .bf-crumb .src { margin-left: 0; }
@@ -883,7 +883,7 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 .bf-ticks span:first-child { transform: none; }
 .bf-ticks span:last-child:not(:first-child) { transform: translateX(-100%); }
 .bf-days-note { padding-left: 126px; font-size: 13px; color: var(--n400); }
-.bf-bills { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); border-radius: 14px; box-shadow: inset 0 0 0 1px var(--divider); overflow: hidden; }
+.bf-bills { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); border-radius: 14px; box-shadow: inset 0 0 0 1px var(--divider); overflow: hidden; }
 .bf-bill { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; box-shadow: 1px 0 0 var(--wash-6), 0 1px 0 var(--wash-6); min-width: 0; }
 .bf-bill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .bf-bill-amount { font-size: 15px; font-weight: 600; color: var(--n100); }
@@ -917,7 +917,7 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 
 /* The brief page's right-hand rail: what's coming up, the next brief and what's on your plate.
    Beside the brief on wide screens (and it stays in view while you scroll); below it otherwise. */
-.bf-page { max-width: 1760px; }
+.bf-page { max-width: none; }
 .bf-layout { display: flex; flex-direction: column; gap: 36px; min-width: 0; }
 .bf-content { display: flex; flex-direction: column; gap: 36px; min-width: 0; }
 .bf-rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; align-items: start; }
@@ -940,6 +940,6 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 .bf-plate-status { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--n500); }
 .bf-plate-status.doing { color: var(--a300); }
 @media (min-width: 1500px) {
-  .bf-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 40px; align-items: start; }
+  .bf-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 22vw, 460px); gap: 40px; align-items: start; }
   .bf-rail { grid-template-columns: minmax(0, 1fr); position: sticky; top: 20px; max-height: calc(100dvh - 40px); overflow-y: auto; scrollbar-width: none; }
 }
