@@ -6,7 +6,7 @@
 // SOURCES below records which cards are live and which are samples; every card shows a badge.
 import { Component, html, render } from '/vendor/preact-htm.js';
 import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
-import { projectSamples, financeSamples } from './dashboard-mocks.js';
+import { projectSamples, financeSamples, knowledgeSamples, agentSamples, lifeSamples } from './dashboard-mocks.js';
 import { Home } from './home.js';
 
 import { applyTheme, initialTheme } from './theme.js';
@@ -67,6 +67,9 @@ const SOURCES = {
   markets: { kind: 'sample', from: 'No market data is connected' },
   projects: { kind: 'sample', from: 'Not connected to Stack yet' },
   finance: { kind: 'sample', from: 'Not connected to Finance yet' },
+  knowledge: { kind: 'sample', from: 'No notes or documents are connected yet' },
+  agentsPage: { kind: 'sample', from: 'Agent pages are a preview; only the EA runs today' },
+  life: { kind: 'sample', from: 'No goals, health or journal data is connected yet' },
   briefFallback: { kind: 'sample', from: 'Shown until the EA writes its first brief' },
   chat: { kind: 'sample', from: 'Chat replies are canned; the chatbot is not connected yet' },
 };
@@ -132,6 +135,7 @@ class App extends Component {
     read: {},
     sel: null,
     filter: 'all',
+    inboxTab: 'findings',
     pick: null,
     draft: '',
     thinking: false,
@@ -343,8 +347,12 @@ class App extends Component {
     if (this.state.personalBusy) return;
     if (view === 'backlog' || view === 'settings') this.loadPersonal(view);
     const from = this.state.view;
+    // Proposals live on the Inbox's Proposals tab; older links still ask for the dashboard's 'actions' anchor.
+    const proposals = anchor === 'actions' || Boolean(actionId);
+    if (proposals) { view = 'inbox'; anchor = null; }
+    const tab = proposals ? { inboxTab: 'proposals' } : {};
     const swap = () => new Promise((done) => this.setState(
-      { view, ...(actionId ? { actionSel: actionId, actionFilter: 'all', actionHistory: null } : {}) },
+      { view, ...tab, ...(actionId ? { actionSel: actionId, actionFilter: 'all', actionHistory: null } : {}) },
       () => { window.scrollTo(0, 0); done(); },
     ));
     const root = document.documentElement;
@@ -403,7 +411,7 @@ class App extends Component {
           ${this.renderTopbar(v)}
           <div class="body">
             <div class="content">
-              ${this.state.view === 'hq' ? this.renderHq(v) : this.state.view === 'inbox' ? html`<main class="main">${this.renderInbox(v)}</main>` : this.state.view === 'backlog' ? this.renderBacklog() : this.state.view === 'settings' ? this.renderSettings() : this.state.view === 'projects' ? this.renderProjectDashboard() : this.state.view === 'finance' ? this.renderFinanceDashboard() : this.renderBriefing(v)}
+              ${this.state.view === 'hq' ? this.renderHq(v) : this.state.view === 'inbox' ? html`<main class="main">${this.renderInbox(v)}</main>` : this.state.view === 'backlog' ? this.renderBacklog() : this.state.view === 'settings' ? this.renderSettings() : this.state.view === 'projects' ? this.renderProjectDashboard() : this.state.view === 'finance' ? this.renderFinanceDashboard() : this.state.view === 'knowledge' ? this.renderKnowledge() : this.state.view === 'agents' ? this.renderAgentsPage() : this.state.view === 'life' ? this.renderLife() : this.renderBriefing(v)}
             </div>
           </div>
         </div>
@@ -609,14 +617,14 @@ class App extends Component {
     const items = [
       { label: 'Home', view: 'home', go: () => this.openView('home') },
       { label: 'Dashboard', view: 'hq', go: () => this.openView('hq') },
-      { label: 'Inbox', view: 'inbox', badge: v.unread || '', go: () => this.openView('inbox') },
+      { label: 'Inbox', view: 'inbox', badge: v.unread + v.pending || '', go: () => this.openView('inbox') },
       { label: 'Projects', view: 'projects', go: () => this.openView('projects') },
       { label: 'Finance', view: 'finance', go: () => this.openView('finance') },
       { label: 'Backlog', view: 'backlog', go: () => this.openView('backlog') },
       { label: 'Settings', view: 'settings', go: () => this.openView('settings') },
-      { label: 'Knowledge' },
-      { label: 'Agents' },
-      { label: 'Life' },
+      { label: 'Knowledge', view: 'knowledge', go: () => this.openView('knowledge') },
+      { label: 'Agents', view: 'agents', go: () => this.openView('agents') },
+      { label: 'Life', view: 'life', go: () => this.openView('life') },
     ];
     const dot = { run: ['var(--accent)', 'var(--accent)'], wait: ['transparent', 'var(--a400)'], idle: ['transparent', 'var(--n600)'] };
     return html`
@@ -705,7 +713,7 @@ class App extends Component {
           </div>
         </section>
         <div class="hero">${this.renderCarousel(v)} ${this.renderDecision(v)}</div>
-        ${!this.state.hideSamples && this.renderFocusCards(v)} ${this.renderActions()} ${!this.state.hideSamples && this.renderGlance(v)} ${this.renderCalendar(v)}
+        ${!this.state.hideSamples && this.renderFocusCards(v)} ${!this.state.hideSamples && this.renderGlance(v)} ${this.renderCalendar(v)}
         ${!this.state.hideSamples && html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px;">
           ${this.renderHabits(v)} ${this.renderMeals(v)} ${this.renderPeople(v)}
         </div>
@@ -797,15 +805,15 @@ class App extends Component {
   renderDecision(v) {
     return html`<section class="decision col" style="gap: 12px;">
       <span class="fs12 steel">Your decisions ${src('decision', this.state.data.actionsError && 'Down')}</span>
-      <h2>${this.state.data.actionsError ? 'Action review unavailable' : v.pending ? `${v.pending} proposal${v.pending === 1 ? '' : 's'} to review` : 'No pending proposals'}</h2>
+      <h2>${this.state.data.actionsError ? 'Proposals unavailable' : v.pending ? `${v.pending} proposal${v.pending === 1 ? '' : 's'} to review` : 'No pending proposals'}</h2>
       <p class="fs14 soft">Inspect the source and details before deciding. Calendar proposals explicitly enabled for creation add an event after approval; manual suggestions stay yours to carry out.</p>
-      <button class="btn btn-secondary" onClick=${() => document.getElementById('actions')?.scrollIntoView({ behavior: 'smooth' })}>Review proposals</button>
+      <button class="btn btn-secondary" onClick=${() => this.go('inbox', 'actions')}>Review proposals in Inbox</button>
     </section>`;
   }
 
   openProposal(id) {
-    this.setState({ actionSel: id, actionFilter: 'all', actionHistory: null, actionError: '', pick: null }, () => {
-      document.getElementById('actions')?.scrollIntoView({ behavior: 'smooth' });
+    this.setState({ view: 'inbox', inboxTab: 'proposals', actionSel: id, actionFilter: 'all', actionHistory: null, actionError: '', pick: null }, () => {
+      window.scrollTo(0, 0);
       document.querySelector('#actions article')?.focus({ preventScroll: true });
     });
   }
@@ -889,7 +897,7 @@ class App extends Component {
     const source = a?.source_snapshot ?? {};
     const history = a && actionHistory?.id === a.id && actionHistory.revision === a.revision ? actionHistory.events : null;
     return html`<section id="actions" class="col" style="gap: 12px;">
-      <div class="between wrap" style="gap: 12px;"><h2 style="font-size: 20px;">Action review ${src('actions', this.state.data.actionsError && 'Down')}</h2>
+      <div class="between wrap" style="gap: 12px;"><h2 style="font-size: 20px;">Proposals ${src('actions', this.state.data.actionsError && 'Down')}</h2>
         <span class="fs13 muted">${data.actionsError ? 'Unavailable' : `${actions.pending - (actions.demo_pending ?? 0)} awaiting review${actions.demo_pending ? ` · ${actions.demo_pending} demo requests` : ''}`}</span></div>
       <p class="fs12 muted">Only calendar proposals labelled “Creates an event after approval” can write to your main calendar. Manual plans and earlier record-only decisions never execute.</p>
       ${!actions.calendar_write_ready && html`<p class="fs13 dim">Calendar creation needs Google write permission. You can still review requests and see their overlay.</p>`}
@@ -1359,6 +1367,24 @@ class App extends Component {
   }
 
   renderInbox(v) {
+    const tab = this.state.inboxTab === 'proposals' ? 'proposals' : 'findings';
+    const tabs = [
+      ['findings', 'Email findings', v.unread ? `${v.unread} new` : ''],
+      ['proposals', 'Proposals', this.state.data.actionsError ? '' : v.pending ? `${v.pending} to review` : ''],
+    ];
+    return html`<div class="col" style="gap: 16px;">
+      <div class="filters" role="tablist" aria-label="Inbox sections" style="align-self: flex-start;">
+        ${tabs.map(([id, label, count]) => html`<button type="button" role="tab" class="btn btn-ghost sm" id=${`inbox-tab-${id}`}
+          aria-selected=${tab === id} aria-controls="inbox-panel" style=${tab === id ? on('var(--wash-8)') : ''}
+          onClick=${() => this.setState({ inboxTab: id })}>${label}${count && html` <span class="muted">· ${count}</span>`}</button>`)}
+      </div>
+      <div id="inbox-panel" role="tabpanel" aria-labelledby=${`inbox-tab-${tab}`}>
+        ${tab === 'proposals' ? this.renderActions() : this.renderFindings(v)}
+      </div>
+    </div>`;
+  }
+
+  renderFindings(v) {
     const { data, filter, sel, findingSaving, findingError } = this.state;
     const { items, scan, total } = data.findings;
     const labels = { bill: 'Bill or deadline', commitment: 'Commitment', reply: 'Reply needed' };
@@ -1380,7 +1406,7 @@ class App extends Component {
     return html`
       <section id="inbox" class="col" style="gap: 12px;">
         <div class="between wrap" style="gap: 12px;">
-          <div class="col"><h2 style="font-size: 20px;">Admin inbox ${src('inbox', this.state.data.findingsError && 'Down')}</h2>
+          <div class="col"><h2 style="font-size: 20px;">Email findings ${src('inbox', this.state.data.findingsError && 'Down')}</h2>
             <span class="fs13 muted">${v.unread} new · Gmail findings · Brisbane time</span></div>
           <button class="btn btn-secondary" disabled=${this.state.posting || data.busy} onClick=${() => this.runEa('morning_brief')}>${data.busy ? 'EA running…' : 'Scan email'}</button>
         </div>
@@ -1714,6 +1740,61 @@ class App extends Component {
       <div class="dashboard-columns"><section class="tile panel"><div class="between"><h2 class="card-title">Recent transactions</h2><span class="fs12 muted">Sample ledger</span></div>${f.transactions.map((t) => html`<div class="dashboard-list-row between"><div class="col"><span>${t.name}</span><span class=${`fs12 ${t.category === 'To categorise' ? 'coral' : 'muted'}`}>${t.date} · ${t.category}</span></div><strong class=${t.amount > 0 ? 'steel' : 'soft'}>${t.amount > 0 ? '+' : '−'}${Math.abs(t.amount).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}</strong></div>`)}</section>
       <section class="tile panel"><h2 class="card-title">Upcoming bills</h2>${f.bills.map((b) => html`<div class="dashboard-list-row between"><div class="col"><span>${b.name}</span><span class="fs12 muted">Due ${b.due}</span></div><strong>${money(b.amount)}</strong></div>`)}<span class="fs12 muted">Planned payments · no payments scheduled by moniqr</span></section></div>
       <section class="tile panel"><div class="between wrap"><div class="col" style="gap: 6px;"><h2 class="card-title">A little housekeeping</h2><p class="muted">1 sample transaction needs a category. Review your ledger, budgets and personal or business reports in Finance.</p></div><a class="btn btn-secondary" href=${finance}>Review in Finance ↗</a></div></section>
+    </main>`;
+  }
+
+  /** Heading for a page that has no app behind it yet: every card on it is sample data. */
+  sampleHeader(title, description, id) {
+    return html`<header class="dashboard-heading between wrap">
+      <div class="col" style="gap: 8px;"><span class="fs12 steel">MONIQR / ${title.toUpperCase()}</span><h1>${title}</h1><p class="muted">${description}</p></div>
+    </header><div class="dashboard-notice">${src(id, null, 'flush')}<span>Everything on this page is sample data. ${title} is not wired up yet.</span></div>`;
+  }
+
+  renderKnowledge() {
+    const k = knowledgeSamples;
+    return html`<main class="main dashboard">
+      ${this.sampleHeader('Knowledge', 'Your notes, study material and reference documents, searchable in one place.', 'knowledge')}
+      <div class="dashboard-metrics">
+        ${this.dashboardMetric('Notes and documents', String(k.collections.reduce((n, c) => n + c.count, 0)), `Across ${k.collections.length} collections`)}
+        ${this.dashboardMetric('Added this week', '7', '4 study · 3 admin')}
+        ${this.dashboardMetric('Due for review', String(k.review.filter((r) => r.due === 'Today').length), 'Flashcards today')}
+        ${this.dashboardMetric('Study streak', '5 days', 'Keep it going')}
+      </div>
+      <div class="dashboard-projects">${k.collections.map((c) => html`<article class="tile panel"><div class="between"><span class="fs12 muted">Collection</span><span class="fs12 steel">${c.count} items</span></div><h3>${c.name}</h3><p class="fs13 muted">${c.note}</p><span class="fs12 dim">Updated ${c.updated}</span></article>`)}</div>
+      <div class="dashboard-columns">
+        <section class="tile panel"><div class="between"><h2 class="card-title">Recently added</h2><span class="fs12 muted">All collections</span></div>${k.recent.map((r) => html`<div class="dashboard-list-row between wrap"><div class="col"><span>${r.title}</span><span class="fs12 muted">${r.source}</span></div><span class="fs12 muted">${r.when}</span></div>`)}</section>
+        <section class="tile panel"><div class="between"><h2 class="card-title">Review queue</h2><span class="badge">${k.review.length}</span></div>${k.review.map((r) => html`<div class="dashboard-list-row col"><span class=${`fs12 ${r.due === 'Today' ? 'steel' : 'muted'}`}>DUE ${r.due.toUpperCase()}</span><span>${r.q}</span></div>`)}</section>
+      </div>
+    </main>`;
+  }
+
+  renderAgentsPage() {
+    return html`<main class="main dashboard">
+      ${this.sampleHeader('Agents', 'The agents that work for you, what each one may do and when it runs.', 'agentsPage')}
+      <div class="dashboard-metrics">
+        ${this.dashboardMetric('Agents', String(agentSamples.length), '1 running · 3 ideas')}
+        ${this.dashboardMetric('Runs this week', '14', 'Morning and afternoon briefs')}
+        ${this.dashboardMetric('Waiting on you', '2', 'Proposals in the Inbox')}
+        ${this.dashboardMetric('Outward actions', 'None', 'Everything needs your approval')}
+      </div>
+      <div class="dashboard-projects">${agentSamples.map((a) => html`<article class="tile panel"><div class="between"><span class="fs12 muted">${a.runs}</span><span class="dashboard-status steel">${a.status}</span></div><h3>${a.name}</h3><p class="fs13 soft">${a.role}</p><p class="fs13 muted">${a.note}</p></article>`)}</div>
+      <section class="tile panel"><div class="col" style="gap: 6px;"><h2 class="card-title">The real EA</h2><p class="muted">The live EA's schedule, run status and Run now are on Settings; its brief is on the Dashboard.</p></div>
+        <div class="row wrap"><button class="btn btn-secondary" onClick=${() => this.openView('settings')}>Open Settings</button><button class="btn btn-ghost" onClick=${() => this.openView('briefing')}>Latest brief</button></div></section>
+    </main>`;
+  }
+
+  renderLife() {
+    const l = lifeSamples;
+    return html`<main class="main dashboard">
+      ${this.sampleHeader('Life', 'Goals, health, people and reflection, outside work and study.', 'life')}
+      <div class="dashboard-metrics">${l.health.map(([label, value, note]) => this.dashboardMetric(label, value, note))}</div>
+      <section class="col" style="gap: 16px;"><h2>Goals</h2>
+        <div class="dashboard-projects">${l.goals.map((g) => html`<article class="tile panel"><h3>${g.name}</h3><p class="fs13 muted">${g.note}</p><div class="between fs12"><span class="dim">Progress</span><span>${g.progress}%</span></div><div class="bar"><div style=${`width: ${g.progress}%`}></div></div></article>`)}</div>
+      </section>
+      <div class="dashboard-columns">
+        <section class="tile panel"><h2 class="card-title">People</h2>${l.people.map((p) => html`<div class="dashboard-list-row col"><span>${p.name}</span><span class="fs13 muted">${p.note}</span></div>`)}</section>
+        <section class="tile panel"><div class="between"><h2 class="card-title">Weekly reflection</h2><span class="fs12 muted">Sunday</span></div><p class="soft">${l.journal}</p></section>
+      </div>
     </main>`;
   }
 

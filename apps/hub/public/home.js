@@ -1,7 +1,7 @@
 // Home, the landing page from the moniqr design system: a greeting, the energy orb with today's
 // items orbiting it, the latest brief and what's waiting on Bailey. Everything shown is live:
 // today's Google Calendar events, today's brief and pending Moniqr proposals. Nothing here
-// approves or sends anything; review buttons open Action review on the dashboard.
+// approves or sends anything; review buttons open Proposals in the Inbox.
 import { Component, html } from '/vendor/preact-htm.js';
 import { calendarLayers } from './calendar-overlay.js';
 import './energy-orb.js';
@@ -74,7 +74,7 @@ export function todayItems(data, nowMs) {
     const start = Date.parse(r.start), end = Date.parse(r.end);
     if (!(start < dayEnd && end > dayStart)) continue;
     items.push({ key: `r${r.actionId}`, h: Math.max(0, (start - dayStart) / 3_600_000), end, icon: 'plus', hue: 340, agent: 'Moniqr request',
-      label: r.title, short: r.title, sub: 'Needs your review', detail: `${r.calendar}. Review it on the dashboard before anything is added to your calendar.`,
+      label: r.title, short: r.title, sub: 'Needs your review', detail: `${r.calendar}. Review it in the Inbox before anything is added to your calendar.`,
       review: true, actionId: r.actionId, open: 'actions' });
   }
   items.sort((a, b) => a.h - b.h);
@@ -197,12 +197,12 @@ export class Home extends Component {
       ? 'The agent service isn’t reachable right now, so some of today may be missing.'
       : `${briefToday ? 'Your brief is ready' : 'No brief yet today'}, ${left ? `${left} thing${left === 1 ? '' : 's'} still on the calendar` : 'nothing else on the calendar'} and ${pending ? `${pending} waiting on your yes` : 'nothing waiting on you'}.`;
     const dateLabel = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(now));
-    const open = (x) => go(x.open === 'briefing' ? 'briefing' : 'hq', x.open === 'actions' ? 'actions' : x.open === 'calendar' ? 'calendar' : null, x.actionId);
+    const open = (x) => go(x.open === 'briefing' ? 'briefing' : x.open === 'actions' ? 'inbox' : 'hq', x.open === 'actions' ? 'actions' : x.open === 'calendar' ? 'calendar' : null, x.actionId);
     const tabs = locked ? ['Home', 'Dashboard', 'Inbox', 'Projects', 'Finance'].map((label, i) =>
       ({ label: i ? '****' : label, on: !i, aria: i ? 'Sign in to open' : null, go: i ? this.openSignIn : () => {} })) : [
       { label: 'Home', on: true, go: () => {} },
       { label: 'Dashboard', go: () => go('hq') },
-      { label: 'Inbox', count: unread, go: () => go('inbox') },
+      { label: 'Inbox', count: unread + pending, go: () => go('inbox') },
       { label: 'Projects', go: () => go('projects') },
       { label: 'Finance', go: () => go('finance') },
       { label: 'Backlog', go: () => go('backlog') },
@@ -283,12 +283,12 @@ export class Home extends Component {
                 </div>`}
               </div>
 
-              <button type="button" class="home-card right" onClick=${() => go('hq', 'actions')}>
+              <button type="button" class="home-card right" onClick=${() => go('inbox', 'actions')}>
                 <span class="t"><i style="background: var(--accent-dot);"></i>Waiting on you</span>
                 ${locked ? bars([88, 70, 40]) : data.actionsError ? html`<p>Proposals couldn’t load. The dashboard retries automatically.</p>`
                   : pending ? html`<p>${pending} proposal${pending === 1 ? '' : 's'} to review${pendingItems.length ? ': ' + pendingItems.slice(0, 3).map((a) => a.title).join(', ') : ''}. Nothing goes out until you say so.</p>`
                   : html`<p>Nothing needs your yes right now.</p>`}
-                ${!locked && html`<span class="meta">Action review</span>`}
+                ${!locked && html`<span class="meta">Proposals in Inbox</span>`}
               </button>
 
               ${locked && this.state.signInOpen && html`<form class="home-signin" method="post" action="/login" aria-label="Sign in">

@@ -20,3 +20,45 @@ export const financeSamples = {
   ],
   bills: [ { name: 'Rent', due: '12 Nov', amount: 550 }, { name: 'Electricity', due: '16 Nov', amount: 145 }, { name: 'Phone', due: '18 Nov', amount: 49 } ],
 };
+
+// Knowledge, Agents and Life are placeholders until each is wired to real data.
+export const knowledgeSamples = {
+  collections: [
+    { name: 'CA study', count: 42, note: 'Module notes, past-paper answers and flashcards', updated: 'Yesterday' },
+    { name: 'Work reference', count: 18, note: 'Processes, templates and handover notes', updated: '3 days ago' },
+    { name: 'Home and admin', count: 11, note: 'Warranties, insurance and lease documents', updated: 'Last week' },
+  ],
+  recent: [
+    { title: 'Consolidation adjustments, worked example', source: 'CA study', when: '2h ago' },
+    { title: 'Car insurance renewal terms', source: 'Home and admin', when: 'Yesterday' },
+    { title: 'Month-end close checklist', source: 'Work reference', when: 'Mon' },
+    { title: 'Tax deduction rules for study expenses', source: 'CA study', when: 'Sun' },
+  ],
+  review: [
+    { q: 'When is goodwill tested for impairment?', due: 'Today' },
+    { q: 'What triggers deferred tax on a revaluation?', due: 'Today' },
+    { q: 'Name the three levels of the fair value hierarchy.', due: 'Tomorrow' },
+  ],
+};
+
+export const agentSamples = [
+  { name: 'Executive Assistant', role: 'Email, calendar and the daily brief', status: 'Planned here', runs: '2 a day', note: 'The real EA runs today; this card is a preview of the agent page.' },
+  { name: 'Study Coach', role: 'Plans CA study blocks and spaced review', status: 'Idea', runs: 'Weekly', note: 'Would read Knowledge and propose study sessions for approval.' },
+  { name: 'Finance Clerk', role: 'Categorises transactions and flags bills', status: 'Idea', runs: 'Daily', note: 'Would read Finance and raise proposals, never pay anything.' },
+  { name: 'Health Planner', role: 'Training and meal plans around your week', status: 'Idea', runs: 'Weekly', note: 'Would need a health data connection first.' },
+];
+
+export const lifeSamples = {
+  goals: [
+    { name: 'Pass CA exam module', progress: 60, note: '6 of 10 topics covered · exam in March' },
+    { name: 'Train 4 times a week', progress: 75, note: '3 of 4 sessions this week' },
+    { name: 'Save for Japan trip', progress: 40, note: '$2,400 of $6,000' },
+  ],
+  health: [['Sleep', '7h 12m', 'Last night'], ['Steps', '8,430', 'Today so far'], ['Resting HR', '58 bpm', '7-day average'], ['Training', '3 / 4', 'Sessions this week']],
+  people: [
+    { name: 'Mum', note: 'Birthday in 9 days. Gift idea saved.' },
+    { name: 'Sam', note: 'Dinner Friday. Booking confirmed.' },
+    { name: 'Jess', note: 'Haven’t caught up in 3 weeks.' },
+  ],
+  journal: 'Good week overall. Study is on track but sleep slipped mid-week. Keep Sunday evening free for planning.',
+};
