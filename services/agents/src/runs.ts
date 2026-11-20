@@ -18,7 +18,12 @@ export interface Run {
   duration_ms: number | null;
   error: string | null;
   result: unknown;
+  /** What the run was asked: the conversation, for a chat run. */
+  input: unknown;
 }
+
+/** A console conversation turn. Bailey writes `user` turns; `moniqr` turns are earlier replies. */
+export interface ChatMessage { role: 'user' | 'moniqr'; text: string }
 
 export interface AgentRow {
   id: number;
@@ -36,14 +41,14 @@ export interface ClaimedRun {
 }
 
 const RUN_COLUMNS = `id, agent_id, trigger, kind, status, schedule_id, queued_at, started_at,
-  finished_at, duration_ms, error, result`;
+  finished_at, duration_ms, error, result, input`;
 
 export class NotFoundError extends Error {}
 export class ConflictError extends Error {}
 
 export async function queueRun(
   pool: Pool,
-  opts: { agentSlug: string; trigger: Trigger; kind: string; scheduleId?: number; reuseActive?: boolean },
+  opts: { agentSlug: string; trigger: Trigger; kind: string; scheduleId?: number; reuseActive?: boolean; input?: unknown },
 ): Promise<Run & { existing?: boolean }> {
   return withTransaction(pool, async (client) => {
     // Locking the agent serialises concurrent requests, so two clicks cannot both queue a run.
@@ -56,8 +61,8 @@ export async function queueRun(
       if (active) return { ...active, existing: true };
     }
     const { rows } = await client.query<Run>(
-      `INSERT INTO runs (agent_id, trigger, kind, schedule_id) VALUES ($1, $2, $3, $4) RETURNING ${RUN_COLUMNS}`,
-      [agent.id, opts.trigger, opts.kind, opts.scheduleId ?? null],
+      `INSERT INTO runs (agent_id, trigger, kind, schedule_id, input) VALUES ($1, $2, $3, $4, $5) RETURNING ${RUN_COLUMNS}`,
+      [agent.id, opts.trigger, opts.kind, opts.scheduleId ?? null, opts.input === undefined ? null : JSON.stringify(opts.input)],
     );
     return rows[0]!;
   });
@@ -77,8 +82,9 @@ export async function claimNextRun(pool: Pool, staleAfterMs: number): Promise<Cl
   );
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query<{ id: number }>(
+      // Bailey is waiting on a chat reply, so it goes ahead of queued briefs.
       `SELECT id FROM runs WHERE status = 'queued'
-       ORDER BY queued_at, id FOR UPDATE SKIP LOCKED LIMIT 1`,
+       ORDER BY (kind = 'chat') DESC, queued_at, id FOR UPDATE SKIP LOCKED LIMIT 1`,
     );
     const next = rows[0];
     if (!next) return null;
@@ -97,13 +103,17 @@ export async function claimNextRun(pool: Pool, staleAfterMs: number): Promise<Cl
   });
 }
 
-/** True when `token` is the live token for a running run. */
-export async function checkRunToken(pool: Pool, runId: number, token: string): Promise<boolean> {
-  const { rows } = await pool.query<{ run_token_hash: string | null }>(
-    `SELECT run_token_hash FROM runs WHERE id = $1 AND status = 'running'`,
+/**
+ * True when `token` is the live token for a running run. With `write`, a chat run is refused:
+ * the console is read-only, whatever tools its Codex process was given.
+ */
+export async function checkRunToken(pool: Pool, runId: number, token: string, opts: { write?: boolean } = {}): Promise<boolean> {
+  const { rows } = await pool.query<{ run_token_hash: string | null; kind: string }>(
+    `SELECT run_token_hash, kind FROM runs WHERE id = $1 AND status = 'running'`,
     [runId],
   );
   const stored = rows[0]?.run_token_hash;
+  if (opts.write && rows[0]?.kind === 'chat') return false;
   return Boolean(stored && safeEqual(stored, hashToken(token)));
 }
 
@@ -113,17 +123,25 @@ export async function finishRun(
   outcome: { status: 'done' | 'failed'; error?: string; result?: unknown },
 ): Promise<Run> {
   return withTransaction(pool, async (client) => {
-    const current = await client.query<{ status: RunStatus }>(
-      'SELECT status FROM runs WHERE id = $1 FOR UPDATE',
+    const current = await client.query<{ status: RunStatus; kind: string }>(
+      'SELECT status, kind FROM runs WHERE id = $1 FOR UPDATE',
       [runId],
     );
     const status = current.rows[0]?.status;
+    const kind = current.rows[0]?.kind;
     if (!status) throw new NotFoundError(`Run ${runId} not found`);
     if (status !== 'running') throw new ConflictError(`Run ${runId} is ${status}, not running`);
 
     let finalStatus = outcome.status;
     let error = outcome.error ?? null;
-    if (finalStatus === 'done') {
+    if (finalStatus === 'done' && kind === 'chat') {
+      // A chat run's only output is its reply.
+      const reply = (outcome.result as { result?: unknown } | undefined)?.result;
+      if (typeof reply !== 'string' || !reply.trim()) {
+        finalStatus = 'failed';
+        error = 'Chat ended without a reply';
+      }
+    } else if (finalStatus === 'done') {
       const briefs = await client.query('SELECT 1 FROM briefs WHERE run_id = $1', [runId]);
       if (briefs.rowCount === 0) {
         finalStatus = 'failed';

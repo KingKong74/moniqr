@@ -102,7 +102,7 @@ export function renderPage(email: string): string {
   <link rel="icon" type="image/png" href="/assets/moniqr-icon-dark.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
   <link rel="stylesheet" href="${ASSET_BASE}/hq.css">
   <script type="module" src="${ASSET_BASE}/hq.js"></script>
 </head>

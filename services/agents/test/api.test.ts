@@ -123,4 +123,29 @@ describe('agent API', { skip: skipReason }, () => {
     const row = (await pool.query('SELECT next_run_at FROM schedules WHERE id = $1', [morning.id])).rows[0];
     assert.equal(row.next_run_at, null, 'the scheduler picks the next slot rather than firing now');
   });
+
+  test('the console queues one read-only chat at a time and reports its reply', async () => {
+    const messages = [{ role: 'user', text: 'Anything due this week?' }];
+    assert.equal((await api.call('POST', '/chat', RUNNER_TOKEN, { messages })).status, 401);
+    assert.equal((await api.call('POST', '/chat', API_TOKEN, { messages: [{ role: 'moniqr', text: 'hi' }] })).status, 400, 'must end with Bailey');
+    assert.equal((await api.call('POST', '/chat', API_TOKEN, { messages: [{ role: 'system', text: 'hi' }] })).status, 400);
+    const queued = await api.call('POST', '/chat', API_TOKEN, { messages });
+    assert.equal(queued.status, 202);
+    assert.equal((await api.call('POST', '/chat', API_TOKEN, { messages })).status, 409, 'one answer at a time');
+    assert.equal((await api.call('GET', `/chat/${queued.body.run.id}`, API_TOKEN)).body.status, 'queued');
+
+    const claimed = await api.call('POST', '/runner/claim', RUNNER_TOKEN);
+    assert.equal(claimed.body.run.id, queued.body.run.id);
+    assert.deepEqual(claimed.body.run.input, { messages });
+    await api.call('POST', `/runner/runs/${queued.body.run.id}/finish`, RUNNER_TOKEN,
+      { status: 'done', result: { is_error: false, result: 'Your phone bill is due Fri.', tools_used: ['get_daily_admin'] } });
+    const done = await api.call('GET', `/chat/${queued.body.run.id}`, API_TOKEN);
+    assert.deepEqual([done.body.status, done.body.reply, done.body.tools], ['done', 'Your phone bill is due Fri.', ['get_daily_admin']]);
+    const runs = await api.call('GET', '/runs?limit=100', API_TOKEN);
+    assert.ok(!runs.body.runs.some((r: any) => r.kind === 'chat'), 'chats stay out of the brief run list');
+    const brief = await api.call('POST', '/agents/ea/run', API_TOKEN, { kind: 'test' });
+    assert.equal((await api.call('GET', `/chat/${brief.body.run.id}`, API_TOKEN)).status, 404, 'only chat runs are readable here');
+    await api.call('POST', '/runner/claim', RUNNER_TOKEN);
+    await api.call('POST', `/runner/runs/${brief.body.run.id}/finish`, RUNNER_TOKEN, { status: 'failed', error: 'test cleanup' });
+  });
 });

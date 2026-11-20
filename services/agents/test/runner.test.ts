@@ -7,7 +7,7 @@ import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { Pool } from '../src/db.js';
 import { claimNextRun, finishRun, queueRun } from '../src/runs.js';
-import { allowedTools, buildPrompt, codexArgs, codexConfig, executeRun, parseCodexResult, initialiseCodexAuth } from '../src/runner/run.js';
+import { allowedTools, buildPrompt, chatMessages, codexArgs, codexConfig, executeRun, parseCodexResult, initialiseCodexAuth } from '../src/runner/run.js';
 import { freshDatabase, skipReason, startApp } from './helpers.js';
 
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
@@ -32,6 +32,21 @@ test('Google allowlist contains reads and local brief/finding writes only', () =
   assert.deepEqual(allowedTools({ google: false }), ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals']);
   assert.deepEqual(allowedTools({ google: true }), ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_calendars',
     'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email', 'mcp__agents__save_email_finding', 'mcp__agents__propose_action']);
+});
+
+test('the console allowlist is read-only', () => {
+  assert.deepEqual(allowedTools({ google: false }, 'chat'), ['mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals']);
+  const google = allowedTools({ google: true }, 'chat');
+  assert.deepEqual(google, ['mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_calendars',
+    'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email']);
+  const config = codexConfig({ command: 'node', args: ['server.js'], env: {} }, { google: true }, catalogPath, 'chat');
+  for (const write of ['write_brief', 'save_email_finding', 'propose_action']) assert.ok(!config.includes(`"${write}"`), write);
+  assert.ok(config.includes('shell_tool = false'));
+});
+
+test('chat input keeps only well-formed turns', () => {
+  assert.deepEqual(chatMessages(null), []);
+  assert.deepEqual(chatMessages({ messages: [{ role: 'user', text: 'hi' }, { role: 'system', text: 'x' }, { role: 'moniqr', text: ' ' }] }), [{ role: 'user', text: 'hi' }]);
 });
 
 test('Codex JSONL failures, incomplete output and zero-exit error events fail closed', () => {
@@ -204,5 +219,49 @@ describe('runner', { skip: skipReason }, () => {
     assert.match(prompt, /6:30/);
     assert.match(prompt, /do not invent/);
     await finishRun(pool, claimed.run.id, { status: 'failed', error: 'test cleanup' });
+  });
+
+  test('a chat run is read-only, uses the console persona and finishes with its reply, no brief', async () => {
+    await queueRun(pool, { agentSlug: 'ea', trigger: 'manual', kind: 'test' });
+    await queueRun(pool, { agentSlug: 'ea', trigger: 'manual', kind: 'chat', input: { messages: [{ role: 'user', text: 'What is on today?' }] } });
+    const claimed = await claimNextRun(pool, 60_000);
+    assert.equal(claimed?.run.kind, 'chat', 'a waiting chat goes ahead of a queued brief');
+    assert.deepEqual(claimed.run.input, { messages: [{ role: 'user', text: 'What is on today?' }] });
+    const prompt = buildPrompt(claimed, new Date('2026-10-26T20:30:00Z'), { google: true });
+    assert.match(prompt, /moniqr console/);
+    assert.match(prompt, /Bailey: What is on today\?/);
+    assert.doesNotMatch(prompt, /write_brief/);
+
+    const outcome = await executeRun(claimed, {
+      apiUrl: api.baseUrl, codexHome: testHome, catalogPath, codexBin: fixture('fake-codex.mjs'), timeoutMs: 30_000,
+      google: { clientId: 'cid', clientSecret: 'csecret', refreshToken: 'rtoken' },
+    });
+    assert.equal(outcome.status, 'done', outcome.error);
+    const seen = JSON.parse((outcome.result as { result: string }).result);
+    assert.equal(seen.runKind, 'chat');
+    assert.deepEqual(seen.tools.sort(), ['get_daily_admin', 'get_events', 'list_action_proposals', 'list_calendars', 'read_email', 'search_email'],
+      'the MCP server registers no write tools for a chat');
+    assert.match(seen.args.at(-1), /# moniqr, in the console/, 'the console persona replaces the brief instructions');
+    assert.doesNotMatch(seen.args.at(-1), /Call `write_brief` exactly once/);
+
+    // Even with the run token, the API refuses writes from a chat run.
+    const token = claimed.runToken;
+    for (const [path, body] of [['brief', { body_md: 'x', summary: 'x' }], ['findings', {}], ['actions', {}], ['email-scan', {}]] as const) {
+      assert.equal((await api.call('POST', `/runs/${claimed.run.id}/${path}`, token, body)).status, 401, path);
+    }
+    assert.equal((await api.call('GET', `/runs/${claimed.run.id}/admin-context`, token)).status, 200, 'reads still work');
+
+    const run = await finishRun(pool, claimed.run.id, outcome);
+    assert.equal(run.status, 'done', 'a reply is enough; no brief is needed');
+    assert.equal((await pool.query('SELECT 1 FROM briefs WHERE run_id = $1', [claimed.run.id])).rowCount, 0);
+    const brief = await claimNextRun(pool, 60_000);
+    await finishRun(pool, brief!.run.id, { status: 'failed', error: 'test cleanup' });
+  });
+
+  test('a chat that ends without a reply fails', async () => {
+    const claimed = await claim('chat');
+    const run = await finishRun(pool, claimed.run.id, { status: 'done', result: { is_error: false, result: '  ' } });
+    assert.equal(run.status, 'failed');
+    assert.equal(run.error, 'Chat ended without a reply');
   });
 });

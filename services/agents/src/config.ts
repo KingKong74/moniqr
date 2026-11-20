@@ -33,7 +33,8 @@ export function runnerConfig() {
   return {
     apiUrl: required('AGENTS_API_URL'),
     runnerToken: required('RUNNER_TOKEN'),
-    pollIntervalMs: numberFrom('RUNNER_POLL_MS', 15_000),
+    // Short, so a console message is picked up quickly. A claim is one cheap query.
+    pollIntervalMs: numberFrom('RUNNER_POLL_MS', 4_000),
     runTimeoutMs: runTimeoutMs(),
     codexBin: process.env.CODEX_BIN ?? 'codex',
     model: process.env.CODEX_MODEL,

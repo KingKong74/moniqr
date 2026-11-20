@@ -17,7 +17,17 @@ let staleAction = false;
 
 const calendarAdds: any[] = [];
 const personalWrites: unknown[] = [];
+const chats: unknown[] = [];
+let chatBusy = false;
 const agents: AgentsClient = {
+  chat: async (messages) => {
+    if (chatBusy) throw new AgentApiError(409, 'moniqr is still answering your last message.');
+    chats.push(messages); return { id: 77 };
+  },
+  chatStatus: async (id) => {
+    if (id !== 77) throw new AgentApiError(404, 'Chat not found');
+    return { id, status: 'done', started_at: null, reply: 'All clear today.', tools: ['get_events'], error: null };
+  },
   backlog: async () => ({ items: [] }),
   saveBacklog: async (item, id) => { personalWrites.push({ item, id }); return { item: { ...item, id: id ?? 1 } }; },
   settings: async () => ({ timezone: 'Australia/Brisbane', schedules: [] }),
@@ -442,4 +452,30 @@ test('backlog and settings require a session and same-origin writes', async () =
   r = await fetch(base + '/settings', {method:'POST',headers:{...authed,origin:ORIGIN},body:new URLSearchParams({morning:'07:00',afternoon:'16:30',morning_enabled:'on'})});
   assert.equal(r.status, 200);
   assert.deepEqual(personalWrites.at(-1), {morning:'07:00',afternoon:'16:30',morning_enabled:true,afternoon_enabled:false});
+});
+
+test('the console posts the conversation same-site only and reads the reply back', async () => {
+  const send = (body: unknown, headers: Record<string, string>) => fetch(`${base}/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  const messages = [{ role: 'user', text: 'What is on today?', extra: 'dropped' }];
+  assert.equal((await send({ messages }, { origin: ORIGIN })).status, 401);
+  assert.equal((await send({ messages }, { ...authed, origin: 'https://evil.example' })).status, 403);
+  assert.equal((await send({ messages: [] }, { ...authed, origin: ORIGIN })).status, 400);
+  const res = await send({ messages }, { ...authed, origin: ORIGIN });
+  assert.equal(res.status, 202);
+  assert.deepEqual(await res.json(), { id: 77 });
+  assert.deepEqual(chats.splice(0), [[{ role: 'user', text: 'What is on today?' }]], 'only role and text are passed on');
+  chatBusy = true;
+  const busy = await send({ messages }, { ...authed, origin: ORIGIN });
+  chatBusy = false;
+  assert.equal(busy.status, 409);
+  assert.match((await busy.json()).error, /still answering/);
+
+  assert.equal((await get('/api/chat/77')).status, 401);
+  const reply = await get('/api/chat/77', authed);
+  assert.equal((await reply.json()).reply, 'All clear today.');
+  assert.equal((await get('/api/chat/5', authed)).status, 404);
+  assert.equal((await get('/api/chat/x', authed)).status, 400);
+  assert.equal((await get('/console.js', authed)).status, 200);
+  assert.equal((await get('/console.js', { accept: 'application/json' })).status, 401, 'the console script needs a session');
 });

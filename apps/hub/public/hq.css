@@ -276,16 +276,53 @@ input::placeholder { color: var(--n500); }
 .status.done { color: var(--a300); } .status.failed { color: var(--accent-2); } .status.queued, .status.running { color: var(--n100); }
 .run .error { flex-basis: 100%; color: var(--accent-2); font-size: 13px; }
 
-/* — Floating Moniqr chat — */
-.chat-launcher { position: fixed; z-index: 51; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 8px; padding: 8px 16px 8px 8px; border: 1px solid var(--divider); border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; cursor: pointer; box-shadow: 0 10px 30px -8px var(--shadow); }
-.chat-launcher:hover { background: var(--a600); }
-.assistant { position: fixed; z-index: 50; right: max(20px, env(safe-area-inset-right)); bottom: calc(max(20px, env(safe-area-inset-bottom)) + 64px); width: min(380px, calc(100vw - 32px)); height: min(560px, calc(100dvh - 112px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--divider); border-radius: 16px; background: var(--surface); box-shadow: 0 16px 56px -16px var(--shadow); }
-.assistant .msgs { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 8px 18px 18px; overflow: auto; overscroll-behavior: contain; }
-.assistant .bubble { overflow-wrap: anywhere; flex-shrink: 0; }
-.bubble { max-width: 90%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.55; text-wrap: pretty; }
-.bubble.me { align-self: flex-end; background: var(--accent); color: var(--on-accent); }
-.bubble.them { align-self: flex-start; background: var(--wash-6); color: var(--n200); }
-.m-mark { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: flex; align-items: center; justify-content: center; font-weight: 500; font-size: 14px; flex-shrink: 0; }
+/* — The moniqr console (console.js): right-click menu and a terminal-styled session. The panel is
+   indigo night in both themes, like the sidebar; the prompt takes the theme's action colour. — */
+:root { --mq-bg: #1d1e3d; --mq-bar: #17183a; --mq-line: rgb(238 238 250 / 0.1); --mq-text: #e6e5f5; --mq-dim: #9a99b8;
+  --mq-accent: #f29a72; --mq-error: #ff8fae; --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+:root[data-theme="dark"] { --mq-bg: #0a0b1a; --mq-bar: #111230; --mq-accent: #a39eff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) { --mq-bg: #0a0b1a; --mq-bar: #111230; --mq-accent: #a39eff; } }
+
+.mq-menu { position: fixed; z-index: 60; width: 232px; padding: 6px; border: 1px solid var(--divider); border-radius: 12px; background: var(--surface); box-shadow: 0 14px 40px -12px var(--shadow); animation: mq-pop 120ms var(--ease); }
+.mq-menu-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--n100); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.mq-menu-item:hover, .mq-menu-item:focus-visible { background: var(--wash-8); outline: none; }
+.mq-menu-item kbd { font-family: var(--font-mono); font-size: 11px; color: var(--n500); }
+.mq-glyph { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px; border-radius: 6px; background: var(--nav-bg); color: var(--mq-accent); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+.mq-menu-hint { display: block; padding: 4px 10px 2px; font-size: 11px; color: var(--n500); }
+
+.mq-console { position: fixed; z-index: 55; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); width: min(560px, calc(100vw - 32px)); height: min(460px, calc(100dvh - 40px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--mq-line); border-radius: 14px; background: var(--mq-bg); color: var(--mq-text); font-family: var(--font-mono); font-size: 13px; line-height: 1.6; box-shadow: 0 24px 64px -20px rgb(0 0 0 / 0.55); animation: mq-pop 160ms var(--ease); }
+.mq-bar { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; background: var(--mq-bar); border-bottom: 1px solid var(--mq-line); cursor: grab; user-select: none; touch-action: none; }
+.mq-bar:active { cursor: grabbing; }
+.mq-mark { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--mq-accent); color: #1d1e3d; font-family: var(--font-body); font-size: 12px; font-weight: 600; }
+.mq-name { font-weight: 600; color: var(--mq-text); }
+.mq-chip { padding: 1px 8px; border: 1px solid var(--mq-line); border-radius: 20px; font-size: 11px; color: var(--mq-dim); white-space: nowrap; }
+.mq-dot { width: 7px; height: 7px; border-radius: 50%; background: oklch(0.78 0.14 150); }
+.mq-dot.busy { background: var(--mq-accent); animation: mq-pulse 1s ease-in-out infinite; }
+.mq-btn { padding: 2px 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--mq-dim); font: inherit; font-size: 12px; cursor: pointer; }
+.mq-btn:hover:not(:disabled) { color: var(--mq-text); border-color: var(--mq-line); }
+.mq-btn:disabled { opacity: 0.4; cursor: default; }
+.mq-log { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+.mq-line { display: flex; gap: 8px; flex-shrink: 0; }
+.mq-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.mq-text strong { color: #fff; font-weight: 600; }
+.mq-prompt { color: var(--mq-accent); font-weight: 700; }
+.mq-you .mq-text { color: var(--mq-accent); }
+.mq-reply { flex-direction: column; gap: 2px; padding-left: 16px; border-left: 2px solid var(--mq-line); }
+.mq-meta { font-size: 11px; color: var(--mq-dim); }
+.mq-note .mq-text { color: var(--mq-dim); }
+.mq-error .mq-text { color: var(--mq-error); }
+.mq-wait { color: var(--mq-dim); }
+.mq-spin { color: var(--mq-accent); width: 1ch; }
+.mq-input { display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px 14px; border-top: 1px solid var(--mq-line); }
+.mq-input input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--mq-text); font: inherit; font-size: 14px; caret-color: var(--mq-accent); }
+.mq-input input::placeholder { color: var(--mq-dim); }
+.mq-input input:focus-visible { outline: none; }
+.mq-input:focus-within { background: rgb(238 238 250 / 0.03); }
+.mq-send { width: 30px; height: 26px; border: 1px solid var(--mq-line); border-radius: 6px; background: transparent; color: var(--mq-accent); font: inherit; cursor: pointer; }
+.mq-send:disabled { opacity: 0.35; cursor: default; }
+.mq-console ::selection { background: color-mix(in srgb, var(--mq-accent) 40%, transparent); }
+@keyframes mq-pop { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes mq-pulse { 50% { opacity: 0.35; } }
 
 /* — phone — */
 @media (max-width: 760px) {
@@ -303,11 +340,13 @@ input::placeholder { color: var(--n500); }
   .main { padding: 12px 16px 48px; gap: 28px; }
   .slide h1 { font-size: 24px; }
   .briefing h1 { font-size: 28px; }
-  .chat-launcher, .assistant { right: max(16px, env(safe-area-inset-right)); }
+  .mq-console { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); height: min(460px, calc(100dvh - 32px)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .slide { transition: none; }
+  .mq-menu, .mq-console { animation: none; }
+  .mq-dot.busy { animation: none; }
 }
 
 /* Projects and Finance previews share the dashboard surfaces and colour tokens. */

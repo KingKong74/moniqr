@@ -107,6 +107,7 @@ The EA runs with the pinned Codex CLI using your ChatGPT login. Put compact JSON
 `~/.codex/auth.json` into Dokploy's `CODEX_AUTH_JSON` secret environment value. The runner
 seeds its dedicated `agents-codex` volume only if no login exists; Codex refreshes that
 cached login in place. Do not put the auth cache in Git or paste it into chat.
+Console chats are `chat` runs: read-only tools only (calendar, email, inbox state), no brief, a four-minute limit, and they go ahead of queued briefs. The runner polls every 4 seconds by default (`RUNNER_POLL_MS`).
 `CODEX_MODEL` optionally chooses a model; blank uses the CLI default. ChatGPT/Codex usage
 limits still apply.
 
@@ -118,7 +119,7 @@ per-run API credentials stay in its private configuration, removed after the run
 
 ## Personal backlog and brief settings
 
-Open **Backlog** from Home or the dashboard to capture ideas and tasks, edit notes/priority/status, and view completed items. Items are stored in Postgres. The EA can read up to 40 open items through `get_daily_admin` and suggest next steps; only the owner can edit them. The initial task is **Connect the Moniqr chatbot**, saved for later.
+Open **Backlog** from Home or the dashboard to capture ideas and tasks, edit notes/priority/status, and view completed items. Items are stored in Postgres. The EA can read up to 40 open items through `get_daily_admin` and suggest next steps; only the owner can edit them. The initial task was **Connect the Moniqr chatbot**; that is now the moniqr console (see `apps/hub/README.md`).
 
 Open **Settings** to change or pause the two daily briefs. Initial times are **7:00am** and **4:30pm Australia/Brisbane**, every day. Saving recalculates future runs without immediately running a brief. The afternoon brief focuses on what remains today and preparation for tomorrow. The weekly look-ahead retains its existing schedule and enabled state.
 

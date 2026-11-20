@@ -43,6 +43,14 @@ export interface AppOptions {
   calendarWriter?: CalendarWriter | null;
 }
 
+/** The console conversation, oldest first, ending with Bailey's new message. */
+export const chatInput = z.object({
+  messages: z.array(z.object({ role: z.enum(['user', 'moniqr']), text: z.string().trim().min(1).max(4000) }).strict())
+    .min(1).max(30)
+    .refine((m) => m.at(-1)?.role === 'user', 'The last message must be yours')
+    .refine((m) => m.reduce((n, x) => n + x.text.length, 0) <= 24_000, 'The conversation is too long; clear it and start again'),
+}).strict();
+
 const idParam = z.coerce.number().int().positive();
 const limitQuery = z.coerce.number().int().min(1).max(100).default(20);
 
@@ -142,6 +150,26 @@ export function createApp(opts: AppOptions) {
     res.status(existing ? 200 : 202).json({ run, existing: !!existing });
   });
 
+  // --- Hub: the moniqr console. A chat is a read-only EA run whose reply is the run result. ---
+
+  app.post('/chat', hub, async (req, res) => {
+    const { messages } = chatInput.parse(req.body);
+    const run = await queueRun(pool, { agentSlug: 'ea', trigger: 'manual', kind: 'chat', reuseActive: true, input: { messages } });
+    if (run.existing) throw new ConflictError('moniqr is still answering your last message.');
+    res.status(202).json({ run: { id: run.id, status: run.status } });
+  });
+
+  app.get('/chat/:id', hub, async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const { rows } = await pool.query<{ status: string; error: string | null; result: { result?: unknown; tools_used?: unknown } | null; started_at: Date | null }>(
+      `SELECT status, error, result, started_at FROM runs WHERE id = $1 AND kind = 'chat'`, [id]);
+    const run = rows[0];
+    if (!run) throw new NotFoundError(`Chat ${id} not found`);
+    const reply = run.status === 'done' && typeof run.result?.result === 'string' ? run.result.result : null;
+    const tools = Array.isArray(run.result?.tools_used) ? run.result.tools_used.filter((t): t is string => typeof t === 'string') : [];
+    res.json({ id, status: run.status, started_at: run.started_at, reply, tools, error: run.status === 'failed' ? run.error : null });
+  });
+
   // Cache the current Brisbane week: HQ polls every five seconds.
   let calendarCache: { week: string; expires: number; events: unknown[] } | undefined;
   let calendarPending: Promise<unknown[]> | undefined;
@@ -177,6 +205,7 @@ export function createApp(opts: AppOptions) {
       `SELECT r.id, a.slug AS agent, r.trigger, r.kind, r.status, r.queued_at, r.started_at,
               r.finished_at, r.duration_ms, r.error
        FROM runs r JOIN agents a ON a.id = r.agent_id
+       WHERE r.kind <> 'chat'
        ORDER BY r.queued_at DESC, r.id DESC LIMIT $1`,
       [limit],
     );
@@ -286,7 +315,7 @@ export function createApp(opts: AppOptions) {
   app.post('/runs/:id/actions', async (req, res) => {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
-    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    if (!token || !(await checkRunToken(pool, id, token, { write: true }))) return void res.status(401).json({ error: 'Unauthorised' });
     const action = await proposeAction(pool, id, proposalInput.parse(req.body), opts.actionCalendarId, !!opts.calendarWriter);
     res.status(201).json({ action });
   });
@@ -294,7 +323,7 @@ export function createApp(opts: AppOptions) {
   app.post('/runs/:id/findings', async (req, res) => {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
-    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    if (!token || !(await checkRunToken(pool, id, token, { write: true }))) return void res.status(401).json({ error: 'Unauthorised' });
     const finding = await saveFinding(pool, id, findingInput.parse(req.body));
     res.status(201).json({ finding });
   });
@@ -302,7 +331,7 @@ export function createApp(opts: AppOptions) {
   app.post('/runs/:id/email-scan', async (req, res) => {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
-    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    if (!token || !(await checkRunToken(pool, id, token, { write: true }))) return void res.status(401).json({ error: 'Unauthorised' });
     await saveScan(pool, id, scanInput.parse(req.body));
     res.json({ ok: true });
   });
@@ -310,7 +339,7 @@ export function createApp(opts: AppOptions) {
   app.post('/runs/:id/brief', async (req, res) => {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
-    if (!token || !(await checkRunToken(pool, id, token))) {
+    if (!token || !(await checkRunToken(pool, id, token, { write: true }))) {
       res.status(401).json({ error: 'Unauthorised' });
       return;
     }

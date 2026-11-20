@@ -235,6 +235,31 @@ export function createApp(opts: HubOptions) {
     });
   }
 
+  // The moniqr console. The page sends the whole conversation each time; replies come from a read-only EA run.
+  app.post('/chat', express.json({ limit: '64kb' }), async (req, res) => {
+    if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });
+    const messages = req.body?.messages;
+    const valid = Array.isArray(messages) && messages.length > 0 && messages.length <= 30 && messages.every((m: unknown) =>
+      !!m && typeof m === 'object' && ['user', 'moniqr'].includes((m as { role?: unknown }).role as string) &&
+      typeof (m as { text?: unknown }).text === 'string');
+    if (!valid) return void res.status(400).json({ error: 'Send a message first.' });
+    try { res.status(202).json(await opts.agents.chat!(messages.map((m: { role: 'user' | 'moniqr'; text: string }) => ({ role: m.role, text: m.text })))); }
+    catch (err) {
+      if (err instanceof AgentApiError && [400, 409].includes(err.status)) return void res.status(err.status).json({ error: err.message });
+      throw err;
+    }
+  });
+
+  app.get('/api/chat/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return void res.status(400).json({ error: 'Invalid chat.' });
+    try { res.json(await opts.agents.chatStatus!(id)); }
+    catch (err) {
+      if (err instanceof AgentApiError && err.status === 404) return void res.status(404).json({ error: err.message });
+      throw err;
+    }
+  });
+
   app.get('/api/actions/:id', async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isSafeInteger(id) || id <= 0) return void res.status(400).json({ error: 'Invalid action.' });

@@ -195,23 +195,6 @@ export const MOCK = {
     lede: 'You slept 7h 12m, a little above your average. Today is an upper-body day with meal prep before work. Three decisions are waiting in your inbox, and four promotions line up with things you already have planned.',
     health: 'You have trained 3 of 4 planned sessions this week; today makes 4. Protein has been under target on shift days, so the Health Coach added a Greek yoghurt snack before work. Screens-off after 22:00 slipped twice last week.',
   },
-
-  chat: {
-    opening: [
-      { me: false, text: 'Morning. Upper body at 9 and meal prep at 11 still fit before your shift. Three decisions are in your inbox; the dinner booking needs an answer by noon.' },
-      { me: true, text: 'What should I get Sam?' },
-      { me: false, text: 'He mentioned wanting a turntable twice in September. JB Hi-Fi has 20% off until Wednesday, so ordering tomorrow still arrives Thursday.' },
-    ],
-    suggestions: ['How does my week look?', 'Plan my meals', 'Any good deals?'],
-    /** Canned replies, matched on the first keyword found in the message. */
-    replies: [
-      { match: ['meal'], text: 'Drafted a 5-day plan around 160g protein a day. The grocery order is in your inbox; nothing is bought until you say yes.' },
-      { match: ['deal'], text: 'Four worth knowing: chicken half price at Woolworths (ends Tue), 20% off turntables at JB Hi-Fi (ends Wed), Qantas Bali fares from $499 (ends Fri), Gymshark early access from 3 Nov.' },
-      { match: ['week'], text: 'Busy but workable: shifts Mon, Thu and Sat, gym Mon, Tue, Thu and Sat, Sam’s birthday Thu, dinner Fri if you book it, hike with Jess Sunday morning.' },
-      { match: ['dinner', 'book'], text: 'The table is held until noon. If you would rather go somewhere cheaper, I can ask the group about Rice Paper Sister at 7pm instead.' },
-    ],
-    fallback: 'Understood. I will draft it and put anything that spends money or messages people in your inbox first.',
-  },
 };
 
 export type MockData = typeof MOCK;

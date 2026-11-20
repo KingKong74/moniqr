@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { GoogleCredentials } from '../google.js';
-import type { ClaimedRun } from '../runs.js';
+import type { ChatMessage, ClaimedRun } from '../runs.js';
 
 /** Repo root, where `agents/<slug>/CLAUDE.md` lives. Overridable for Docker. */
 export const REPO_ROOT =
@@ -39,9 +39,29 @@ export interface Sources {
   google: boolean;
 }
 
+/** The console conversation stored on a chat run, or an empty list if it is missing or malformed. */
+export function chatMessages(input: unknown): ChatMessage[] {
+  const messages = (input as { messages?: unknown } | null)?.messages;
+  if (!Array.isArray(messages)) return [];
+  return messages.filter((m): m is ChatMessage =>
+    (m?.role === 'user' || m?.role === 'moniqr') && typeof m.text === 'string' && m.text.trim() !== '');
+}
+
+function chatPrompt(when: string, today: string, messages: ChatMessage[], sources: Sources): string {
+  const transcript = messages.map((m) => `${m.role === 'user' ? 'Bailey' : 'moniqr'}: ${m.text.trim()}`).join('\n\n');
+  const reach = sources.google
+    ? `You can read his calendars (get_events takes whole Brisbane days; today is ${today}), search and read his email, ` +
+      'and read what moniqr already knows with get_daily_admin and list_action_proposals.'
+    : 'Google is not connected for this run, so you cannot see his calendar or email. You can read get_daily_admin and list_action_proposals.';
+  return `${when}\n\nBailey is talking to you in the moniqr console. ${reach} ` +
+    'Look things up only when the question needs it. Reply to his last message.\n\n' +
+    `<conversation>\n${transcript}\n</conversation>`;
+}
+
 export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sources = { google: false }): string {
   const today = brisbaneDate(now);
   const when = `It is ${brisbaneNow(now)} in Brisbane (${today}). This is run ${claimed.run.id}.`;
+  if (claimed.run.kind === 'chat') return chatPrompt(when, today, chatMessages(claimed.run.input), sources);
   const noData =
     'No calendar, email or finance tools are connected yet, so do not invent any commitments, bills or figures. ' +
     'Say plainly which sections are waiting on which data source.';
@@ -101,8 +121,16 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
   }
 }
 
+/** The console is read-only: no brief, findings or proposals, and Google only to read. */
+export function chatTools(sources: Sources): string[] {
+  const tools = ['mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals'];
+  if (sources.google) tools.push('mcp__agents__list_calendars', 'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email');
+  return tools;
+}
+
 /** The MCP tools a run may call. Google tools only when Google is connected. */
-export function allowedTools(sources: Sources): string[] {
+export function allowedTools(sources: Sources, kind?: string): string[] {
+  if (kind === 'chat') return chatTools(sources);
   const tools = ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals'];
   if (sources.google) {
     tools.push(
@@ -116,6 +144,8 @@ export function allowedTools(sources: Sources): string[] {
   }
   return tools;
 }
+
+export const CHAT_TIMEOUT_MS = 4 * 60_000;
 
 export interface RunOptions {
   apiUrl: string;
@@ -135,7 +165,7 @@ export interface RunOutcome {
 }
 
 /** Only our server is configured; native execution, edits, web and apps are disabled. */
-export function codexConfig(server: { command: string; args: string[]; env: Record<string, string> }, sources: Sources, catalogPath: string): string {
+export function codexConfig(server: { command: string; args: string[]; env: Record<string, string> }, sources: Sources, catalogPath: string, kind?: string): string {
   const json = JSON.stringify;
   const disabled = ['shell_tool', 'view_image', 'apps', 'plugins', 'remote_plugin', 'multi_agent',
     'multi_agent_v2', 'browser_use', 'computer_use', 'image_generation', 'memories', 'goals',
@@ -151,7 +181,7 @@ export function codexConfig(server: { command: string; args: string[]; env: Reco
     '[features]', ...disabled.map((name) => `${name} = false`),
     '[mcp_servers.agents]', `command = ${json(server.command)}`, `args = ${json(server.args)}`,
     'required = true', 'default_tools_approval_mode = "approve"', 'startup_timeout_sec = 30', 'tool_timeout_sec = 90',
-    `enabled_tools = ${json(allowedTools(sources).map((name) => name.replace('mcp__agents__', '')))}`,
+    `enabled_tools = ${json(allowedTools(sources, kind).map((name) => name.replace('mcp__agents__', '')))}`,
     '[mcp_servers.agents.env]', ...Object.entries(server.env).map(([key, value]) => `${key} = ${json(value)}`),
   ].join('\n') + '\n';
 }
@@ -201,7 +231,7 @@ async function executeCodexRun(claimed: ClaimedRun, opts: RunOptions): Promise<R
   const configPath = path.join(codexHome, 'config.toml');
   const server = {
     command: mcp.command, args: mcp.args,
-    env: { AGENTS_API_URL: opts.apiUrl, RUN_ID: String(claimed.run.id), RUN_TOKEN: claimed.runToken, ...googleEnv },
+    env: { AGENTS_API_URL: opts.apiUrl, RUN_ID: String(claimed.run.id), RUN_KIND: claimed.run.kind, RUN_TOKEN: claimed.runToken, ...googleEnv },
   };
   const catalogPath = opts.catalogPath ?? process.env.CODEX_MODEL_CATALOG ?? '/opt/moniqr/codex-models.json';
   // Fail closed if the capability-restricted catalog is missing or has native execution/edit tools.
@@ -210,12 +240,17 @@ async function executeCodexRun(claimed: ClaimedRun, opts: RunOptions): Promise<R
     m.shell_type !== 'disabled' || m.apply_patch_tool_type != null || m.experimental_supported_tools?.length || m.tool_mode !== 'direct' || m.supports_search_tool !== false)) {
     throw new Error('Codex catalog must disable native shell, edits and experimental tools');
   }
-  const instructions = await readFile(path.join(REPO_ROOT, claimed.agent.instructions_path), 'utf8');
+  // The console has its own persona file beside the agent's instructions (agents/ea/CHAT.md).
+  const chat = claimed.run.kind === 'chat';
+  const instructionsPath = chat ? path.join(path.dirname(claimed.agent.instructions_path), 'CHAT.md') : claimed.agent.instructions_path;
+  const instructions = await readFile(path.join(REPO_ROOT, instructionsPath), 'utf8');
+  // Bailey is waiting on a chat, so it gets less time than a brief.
+  const timeoutMs = chat ? Math.min(opts.timeoutMs, CHAT_TIMEOUT_MS) : opts.timeoutMs;
   const args = codexArgs(`${instructions}\n\n${buildPrompt(claimed, new Date(), sources)}`, opts.model);
 
   const cwd = await mkdtemp(path.join(tmpdir(), 'moniqr-run-'));
   try {
-    await writeFile(configPath, codexConfig(server, sources, catalogPath), { mode: 0o600 });
+    await writeFile(configPath, codexConfig(server, sources, catalogPath, claimed.run.kind), { mode: 0o600 });
     return await new Promise<RunOutcome>((resolve) => {
       const child = spawn(opts.codexBin, args, { cwd, env: codexEnv(codexHome), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
@@ -231,7 +266,7 @@ async function executeCodexRun(claimed: ClaimedRun, opts: RunOptions): Promise<R
         timedOut = true;
         killGroup('SIGTERM');
         setTimeout(() => killGroup('SIGKILL'), 10_000).unref();
-      }, opts.timeoutMs);
+      }, timeoutMs);
 
       child.on('error', (err) => {
         clearTimeout(timer);
@@ -241,7 +276,7 @@ async function executeCodexRun(claimed: ClaimedRun, opts: RunOptions): Promise<R
       child.on('close', (code) => {
         clearTimeout(timer);
         if (timedOut) {
-          resolve({ status: 'failed', error: `Timed out after ${Math.round(opts.timeoutMs / 1000)}s` });
+          resolve({ status: 'failed', error: `Timed out after ${Math.round(timeoutMs / 1000)}s` });
           return;
         }
         const parsed = parseCodexResult(stdout);

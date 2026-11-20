@@ -12,7 +12,7 @@ Signed out, `/login` is Home in the design's locked state (`public/locked.js`): 
 
 ## Dashboard
 
-The dashboard (formerly HQ), the command centre, built from the *Personal OS – HQ v4* design: brief carousel, today's key decision (a count that links to Proposals in the Inbox), priorities, news, mood, week calendar, habits, food, people, markets, projects and the Moniqr chat panel. All Moniqr-related apps live on subdomains (the budgeting app at finance.moniqr.com) behind their own login (Cloudflare Access for now).
+The dashboard (formerly HQ), the command centre, built from the *Personal OS – HQ v4* design: brief carousel, today's key decision (a count that links to Proposals in the Inbox), priorities, news, mood, week calendar, habits, food, people, markets and projects. All Moniqr-related apps live on subdomains (the budgeting app at finance.moniqr.com) behind their own login (Cloudflare Access for now).
 
 It is a thin client of the agent API. The Express server sends a page shell, `public/hq.js` and `public/hq.css`, and `/api/hq` with everything the page draws. The page is Preact + htm, served as one ES module from `node_modules` (`/vendor/preact-htm.js`), so there's no client build step. The agent API token stays on the server.
 
@@ -34,7 +34,9 @@ Proposals shows real persisted proposals, source evidence, missing details, expi
 
 The calendar shows the owner-selected main calendar with a separate toggleable Moniqr request overlay. Clicking an overlay opens its proposal details. Undated/ambiguous requests stay under Proposals. Requests span the full day column with a translucent background; confirmed events retain their normal layout beneath them. A successful write invalidates the calendar cache, and provider IDs prevent a request appearing twice when the real event arrives. Undo is limited to unchanged, tagged Moniqr-created events. See the root README for the separate calendar write connection; reads and overlays still work without it.
 
-Lifestyle cards, the carousel and chat still come from `src/mock.ts`, and the page labels sample content. Chat opens from a small bottom-right button as a floating window; it starts closed and can be dismissed with Close, the launcher or Escape. Priorities, mood, habits and sample chat only change page state and reset on reload. Nothing on the page books, buys or sends anything.
+Lifestyle cards and the carousel still come from `src/mock.ts`, and the page labels sample content. Priorities, mood and habits only change page state and reset on reload.
+
+**The moniqr console** (`public/console.js`): right-click anywhere when signed in (or press Ctrl+J) for an *Ask moniqr* button, which opens a small terminal-styled session in moniqr's colours. Shift + right-click, links and text fields keep the browser's own menu; text you have selected is quoted into the question. Each message posts the conversation to `POST /chat`, which queues a read-only `chat` run for the EA; the page polls `GET /api/chat/:id` for the reply. The conversation is kept in the tab's sessionStorage. The persona lives in `agents/ea/CHAT.md`. Nothing on the page books, buys or sends anything.
 
 ## Login
 

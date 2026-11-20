@@ -15,6 +15,8 @@ import { SourceLedger, sourcesFooter, withFooter } from './sources.js';
 const apiUrl = process.env.AGENTS_API_URL;
 const runId = process.env.RUN_ID;
 const runToken = process.env.RUN_TOKEN;
+// The console is read-only: its write tools are never registered and the API refuses its writes.
+const chatRun = process.env.RUN_KIND === 'chat';
 if (!apiUrl || !runId || !runToken) {
   console.error('AGENTS_API_URL, RUN_ID and RUN_TOKEN must be set');
   process.exit(1);
@@ -37,6 +39,7 @@ const observations = new EmailObservations();
 const savedFindingIds = new Set<number>();
 const ledger = new SourceLedger();
 const saveScan = async (final = false) => {
+  if (chatRun) return;
   const response = await post(`/runs/${runId}/email-scan`, observations.scan(final));
   if (!response.ok) throw new Error(`Email scan state could not be saved (${response.status}).`);
 };
@@ -65,7 +68,7 @@ server.registerTool('get_daily_admin', {
   return { content: [{ type: 'text', text: JSON.stringify(r.data) }] };
 });
 
-server.registerTool(
+if (!chatRun) server.registerTool(
   'write_brief',
   {
     title: 'Write brief',
@@ -205,7 +208,7 @@ if (google) {
     },
   );
 
-  server.registerTool('save_email_finding', {
+  if (!chatRun) server.registerTool('save_email_finding', {
     title: 'Save email finding',
     description: 'Save a useful bill/deadline, commitment or reply-needed finding from a message read in this run. ' +
       'One finding per message and category; repeat scans update it without undoing Bailey’s review or dismissal. ' +
@@ -224,7 +227,7 @@ if (google) {
     }
   });
 
-  server.registerTool('propose_action', {
+  if (!chatRun) server.registerTool('propose_action', {
     title: 'Propose an action for owner review',
     description: 'Propose one manual or calendar_create action per finding/kind. The finding must have been saved in this run. ' +
       'Only propose when useful. Manual instructions are for Bailey to do himself. Calendar times must be explicit and unambiguous; use null and missing_details when unknown. ' +

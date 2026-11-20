@@ -131,7 +131,17 @@ export interface BriefSettingsInput {
   morning: string; afternoon: string; morning_enabled: boolean; afternoon_enabled: boolean;
 }
 
+/** A console turn: Bailey's are `user`, earlier replies are `moniqr`. */
+export interface ChatMessage { role: 'user' | 'moniqr'; text: string }
+export interface ChatStatus {
+  id: number; status: 'queued' | 'running' | 'done' | 'failed'; started_at: string | null;
+  reply: string | null; tools: string[]; error: string | null;
+}
+
 export interface AgentsClient {
+  /** Queue a read-only console reply. 409 while the last message is still being answered. */
+  chat?(messages: ChatMessage[]): Promise<{ id: number }>;
+  chatStatus?(id: number): Promise<ChatStatus>;
   backlog?(): Promise<{ items: BacklogItem[] }>;
   saveBacklog?(item: Omit<BacklogItem, 'id'>, id?: number): Promise<{ item: BacklogItem }>;
   settings?(): Promise<BriefSettings>;
@@ -169,6 +179,8 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
   };
 
   return {
+    chat: async (messages) => ({ id: (await call<{ run: { id: number } }>('POST', '/chat', { messages })).run.id }),
+    chatStatus: (id) => call('GET', `/chat/${id}`),
     backlog: () => call('GET', '/backlog'),
     saveBacklog: (item, id) => call(id ? 'PATCH' : 'POST', id ? `/backlog/${id}` : '/backlog', item),
     settings: () => call('GET', '/settings'),

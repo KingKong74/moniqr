@@ -2,12 +2,14 @@
 // one ES module so there's no build step. The server sends everything to draw from /api/hq:
 // live briefs, runs, calendar, findings and proposal decisions, plus sample lifestyle content
 // (data.mock). Enabled calendar proposals create events only after owner approval;
-// manual/record-only choices never execute. Chat, priorities, mood and habits are samples.
+// manual/record-only choices never execute. Priorities, mood and habits are samples. The moniqr console
+// (console.js) opens from a right-click anywhere and talks to a read-only EA run.
 // SOURCES below records which cards are live and which are samples; every card shows a badge.
 import { Component, html, render } from '/vendor/preact-htm.js';
 import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
 import { projectSamples, financeSamples, knowledgeSamples, agentSamples, lifeSamples } from './dashboard-mocks.js';
 import { Home } from './home.js';
+import { mountConsole } from './console.js';
 
 import { applyTheme, initialTheme } from './theme.js';
 
@@ -71,7 +73,6 @@ const SOURCES = {
   agentsPage: { kind: 'sample', from: 'Agent pages are a preview; only the EA runs today' },
   life: { kind: 'sample', from: 'No goals, health or journal data is connected yet' },
   briefFallback: { kind: 'sample', from: 'Shown until the EA writes its first brief' },
-  chat: { kind: 'sample', from: 'Chat replies are canned; the chatbot is not connected yet' },
 };
 const LIVE_COUNT = Object.values(SOURCES).filter((x) => x.kind === 'live').length;
 const SAMPLE_COUNT = Object.keys(SOURCES).length - LIVE_COUNT;
@@ -128,7 +129,6 @@ class App extends Component {
     theme: document.documentElement.dataset.theme,
     hideSamples: readHideSamples(),
     projectFilter: 'All',
-    chatOpen: false,
     slide: 0,
     carPaused: false,
     ap: {},
@@ -137,9 +137,6 @@ class App extends Component {
     filter: 'all',
     inboxTab: 'findings',
     pick: null,
-    draft: '',
-    thinking: false,
-    messages: [],
     pri: [],
     priExtra: {},
     priTouched: false,
@@ -162,15 +159,11 @@ class App extends Component {
   cardRefs = Object.fromEntries(FOCUS_IDS.map((id) => [id, (el) => (this.cardEls[id] = el)]));
   gridRef = (el) => (this.gridEl = el);
   searchRef = (el) => (this.searchEl = el);
-  chatInputRef = (el) => (this.chatInputEl = el);
-  chatButtonRef = (el) => (this.chatButtonEl = el);
-  chatMessagesRef = (el) => (this.chatMessagesEl = el);
 
   componentDidMount() {
     this.load();
     this.clock = setInterval(() => this.setState({ now: Date.now() }), 30_000);
     this.onKey = (e) => {
-      if (e.key === 'Escape' && this.state.chatOpen) this.setState({ chatOpen: false });
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         this.searchEl?.focus();
@@ -221,7 +214,6 @@ class App extends Component {
       read: {},
       sel: null,
       pri: mock.priorities.map((p) => p.id),
-      messages: mock.chat.opening,
       muted: Object.fromEntries(mock.interests.map((i) => [i.label, !i.on])),
     };
   }
@@ -290,13 +282,6 @@ class App extends Component {
   }
 
   componentDidUpdate(_props, prev) {
-    if (prev.chatOpen !== this.state.chatOpen) {
-      if (this.state.chatOpen) this.chatInputEl?.focus();
-      else this.chatButtonEl?.focus();
-    }
-    if (this.state.chatOpen && (!prev.chatOpen || prev.messages !== this.state.messages || prev.thinking !== this.state.thinking)) {
-      this.chatMessagesEl?.scrollTo({ top: this.chatMessagesEl.scrollHeight });
-    }
     if (prev.view !== this.state.view && this.state.view === 'hq') this.startBar();
     if (!this.flip) return;
     const { snap, gridH } = this.flip;
@@ -325,17 +310,6 @@ class App extends Component {
         c.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: 140, easing: 'ease-out', fill: 'backwards' });
       }
     }
-  }
-
-  // — chat (sample behaviour) —
-
-  send(text) {
-    if (!text.trim()) return;
-    const { chat } = this.state.data.mock;
-    this.setState((s) => ({ messages: [...s.messages, { me: true, text }], draft: '', thinking: true, chatOpen: true }));
-    const t = text.toLowerCase();
-    const reply = chat.replies.find((r) => r.match.some((m) => t.includes(m)))?.text ?? chat.fallback;
-    this.later(() => this.setState((s) => ({ thinking: false, messages: [...s.messages, { me: false, text: reply }] })), 1400);
   }
 
   openView(view) {
@@ -392,17 +366,9 @@ class App extends Component {
       return html`<p class="boot">${loadError ? 'The dashboard could not load. Refresh to try again.' : 'Loading the dashboard…'}</p>`;
     }
     const v = this.derive();
-    const chat = html`
-        ${this.state.chatOpen && this.renderAssistant(v)}
-        <button type="button" class="chat-launcher" ref=${this.chatButtonRef}
-          aria-label=${this.state.chatOpen ? 'Close Moniqr chat' : 'Open Moniqr chat'}
-          aria-expanded=${this.state.chatOpen} aria-controls="moniqr-chat"
-          onClick=${() => this.setState((s) => ({ chatOpen: !s.chatOpen }))}>
-          <span class="m-mark" aria-hidden="true">M</span><span>${this.state.chatOpen ? 'Close chat' : 'Chat'}</span>
-        </button>`;
     if (this.state.view === 'home') {
       return html`<${Home} data=${data} now=${this.state.now} name=${v.mock.name} theme=${this.state.theme}
-        pending=${v.pending} unread=${v.unread} onTheme=${this.toggleTheme} go=${this.go} />${chat}`;
+        pending=${v.pending} unread=${v.unread} onTheme=${this.toggleTheme} go=${this.go} />`;
     }
     return html`
       <div class="shell">
@@ -415,7 +381,6 @@ class App extends Component {
             </div>
           </div>
         </div>
-        ${chat}
       </div>
     `;
   }
@@ -1865,41 +1830,9 @@ class App extends Component {
       </main>
     `;
   }
-
-  renderAssistant(v) {
-    const { thinking } = this.state;
-    const submit = (e) => {
-      e.preventDefault();
-      this.send(this.state.draft);
-    };
-    return html`
-      <section id="moniqr-chat" class="assistant" role="dialog" aria-modal="false" aria-labelledby="moniqr-chat-title">
-        <div class="row" style="gap: 10px; padding: 16px 18px;">
-          <span class="m-mark">M</span>
-          <div class="col grow">
-            <span id="moniqr-chat-title" class="fs15 bright" style="font-weight: 500;">Moniqr</span>
-            <span class="fs12 muted">${src('chat', null, 'flush')} ${thinking ? 'drafting…' : 'preview'}</span>
-          </div>
-          <button type="button" class="btn sm btn-ghost" aria-label="Close chat" onClick=${() => this.setState({ chatOpen: false })}>Close</button>
-        </div>
-        <div class="msgs" role="log" aria-label="Chat messages" aria-live="polite" ref=${this.chatMessagesRef}>
-          ${this.state.messages.map((m) => html`<div class=${`bubble ${m.me ? 'me' : 'them'}`}>${m.text}</div>`)}
-          ${thinking && html`<span class="fs13 muted">Moniqr is drafting…</span>`}
-        </div>
-        <div class="col" style="gap: 10px; padding: 14px 18px 18px;">
-          <div class="row wrap" style="gap: 6px;">
-            ${v.mock.chat.suggestions.map((s) => html`<button type="button" class="btn sm btn-secondary" onClick=${() => this.send(s)}>${s}</button>`)}
-          </div>
-          <form class="composer" style="padding: 5px; border-radius: 12px;" onSubmit=${submit}>
-            <input ref=${this.chatInputRef} aria-label="Message Moniqr" class="field" style="font-size: 16px;" value=${this.state.draft} onInput=${(e) => this.setState({ draft: e.target.value })} placeholder="Delegate, ask, or plan…" />
-            <button type="submit" class="btn btn-primary" style="border-radius: 8px; padding: 6px 14px;">Send</button>
-          </form>
-        </div>
-      </section>
-    `;
-  }
 }
 
 const root = document.getElementById('app');
 root.textContent = '';
 render(html`<${App} />`, root);
+mountConsole();

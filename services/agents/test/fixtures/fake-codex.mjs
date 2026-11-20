@@ -28,18 +28,20 @@ const admin = await client.callTool({ name: 'get_daily_admin', arguments: {} });
 const invented = tools.includes('propose_action') ? await client.callTool({ name: 'propose_action', arguments: {
   finding_id: 999999, kind: 'manual', title: 'Invented', detail: 'Invented', instructions: 'Do something',
 } }) : null;
-const call = await client.callTool({
+// A chat run has no write_brief; it only replies.
+const canWrite = tools.includes('write_brief');
+const call = canWrite ? await client.callTool({
   name: 'write_brief',
   arguments: { body_md: `# Brief\n\n${args.at(-1)}`, summary: 'Plumbing works.' },
-});
-const second = await client.callTool({
+}) : { content: [{ text: 'no write_brief' }] };
+const second = canWrite ? await client.callTool({
   name: 'write_brief',
   arguments: { body_md: 'again', summary: 'again' },
-});
+}) : { isError: true, content: [{ text: 'no write_brief' }] };
 await client.close();
 
 const result = JSON.stringify({
-  args, cwd: process.cwd(), envKeys: Object.keys(process.env).sort(), tools,
+  args, cwd: process.cwd(), runKind: server.env.RUN_KIND, enabled: server.enabled_tools, envKeys: Object.keys(process.env).sort(), tools,
   proposals: { isError: proposals.isError ?? false, text: proposals.content[0].text },
   admin: { isError: admin.isError ?? false, text: admin.content[0].text },
   invented: invented ? { isError: invented.isError, text: invented.content[0].text } : null,
