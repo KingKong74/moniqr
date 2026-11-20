@@ -10,6 +10,7 @@ import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
 import { projectSamples, financeSamples, knowledgeSamples, agentSamples, lifeSamples } from './dashboard-mocks.js';
 import { Home } from './home.js';
 import { Backlog } from './backlog.js';
+import { renderBriefing } from './briefing.js';
 import { mountConsole } from './console.js';
 
 import { applyTheme, initialTheme } from './theme.js';
@@ -1739,71 +1740,7 @@ class App extends Component {
   }
 
   renderBriefing(v) {
-    const { data } = this.state;
-    const { brief } = data;
-    const fallback = v.mock.briefing;
-    const busy = this.state.posting || data.busy;
-    const back = () => this.openView('hq');
-    const today = v.mock.events.filter((e) => e.day === v.todayIdx);
-    return html`
-      <main class="main">
-        <article class="briefing">
-          <div class="col" style="gap: 10px;">
-            <button class="btn btn-ghost" style="align-self: flex-start;" onClick=${back}>← Back to dashboard</button>
-            ${brief
-              ? html`<span class="fs13 muted">${brief.kind} · prepared by Moniqr ${brief.when} ${src('brief')}</span>
-                  <h1>${brief.summary || 'Your brief'}</h1>`
-              : html`<span class="fs13 muted">No brief from the EA yet ${src('briefFallback')}</span>
-                  <h1>${fallback.title}</h1>
-                  <p class="lede">${fallback.lede}</p>`}
-          </div>
-          ${brief
-            ? html`<section class="brief-md" dangerouslySetInnerHTML=${{ __html: brief.html }}></section>`
-            : html`
-                <section class="col" style="gap: 10px;">
-                  <h2>Your day</h2>
-                  ${today.map((e) => html`<div class="line"><span class="fs14 muted">${hhmm(e.start)}</span><span>${e.title}${e.note && html` <span class="muted">· ${e.note}</span>`}</span></div>`)}
-                </section>
-                <section class="col" style="gap: 10px;">
-                  <h2>Health and habits</h2>
-                  <p class="fs15 soft" style="line-height: 1.7;">${fallback.health}</p>
-                </section>
-                <section class="col" style="gap: 10px;">
-                  <h2>People</h2>
-                  ${v.mock.people.map((p) => html`<div class="line"><span class="fs14 coral">${p.when}</span><span>${p.title} <span class="muted">· ${p.note}</span></span></div>`)}
-                </section>
-                <section class="col" style="gap: 10px;">
-                  <h2>Deals from your inbox</h2>
-                  ${v.mock.deals.map((d) => html`<div class="line" style="grid-template-columns: 96px 1fr;"><span class="fs14 dim">${d.brand}</span><span>${d.offer} <span class="muted">· ${d.why} · ${d.ends}</span></span></div>`)}
-                </section>
-              `}
-          <section class="col" style="gap: 10px;">
-            <h2>Executive Assistant ${src('runs', data.agentsError && 'Offline')}</h2>
-            ${data.agentsError && html`<p class="fs14 coral">The agent service isn't reachable right now.</p>`}
-            <div class="row wrap">
-              <button class="btn btn-primary" disabled=${busy} onClick=${() => this.runEa('morning_brief')}>${busy ? 'EA is running…' : 'Run EA now'}</button>
-              <button class="btn btn-secondary" disabled=${busy} onClick=${() => this.runEa('test')}>Plumbing test</button>
-            </div>
-            ${data.runs.length === 0
-              ? html`<p class="fs14 muted">No runs yet.</p>`
-              : html`<div>
-                  ${data.runs.map(
-                    (r) => html`<div class="run" key=${r.id}>
-                      <span class=${`status ${r.status}`}>${r.status}</span>
-                      <span>${r.kind}</span>
-                      <span class="muted">${r.when}</span>
-                      ${r.error && html`<span class="error">${r.error}</span>`}
-                    </div>`,
-                  )}
-                </div>`}
-          </section>
-          <div class="row wrap">
-            <button class="btn btn-primary" onClick=${() => this.send('Walk me through this briefing')}>Ask Moniqr about this</button>
-            <button class="btn btn-secondary" onClick=${back}>Back to dashboard</button>
-          </div>
-        </article>
-      </main>
-    `;
+    return renderBriefing(this, v, src);
   }
 }
 
