@@ -223,7 +223,9 @@ export class Home extends Component {
             </nav>
             <div class="home-actions">
               ${locked ? html`<button type="button" class="home-ghost" onClick=${this.openSignIn}>Sign in</button>`
-                : html`<form method="post" action="/logout"><button type="submit" class="home-ghost" title=${`Signed in as ${data.email}`}>Sign out</button></form>`}
+                : html`<button type="button" class="home-ghost ask-touch" aria-label="Ask moniqr" title="Ask moniqr"
+                    onClick=${() => window.dispatchEvent(new CustomEvent('moniqr:ask'))}><span class="mq-glyph-inline" aria-hidden="true">›_</span> Ask</button>
+                  <form method="post" action="/logout"><button type="submit" class="home-ghost" title=${`Signed in as ${data.email}`}>Sign out</button></form>`}
             </div>
           </header>
 

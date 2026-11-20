@@ -636,7 +636,8 @@ class App extends Component {
     const onSearch = (e) => {
       e.preventDefault();
       const input = e.currentTarget.elements.q;
-      this.send(input.value);
+      // The Ask box hands its question to the moniqr console (console.js).
+      if (input.value.trim()) window.dispatchEvent(new CustomEvent('moniqr:ask', { detail: { text: input.value, send: true } }));
       input.value = '';
     };
     return html`
@@ -658,6 +659,8 @@ class App extends Component {
           <span>${this.state.hideSamples ? 'Show samples' : 'Hide samples'}</span>
         </button>
         <span class="clock fs13 muted nowrap">${clock}</span>
+        <button type="button" class="ask-touch signout-btn fs12" aria-label="Ask moniqr" title="Ask moniqr"
+          onClick=${() => window.dispatchEvent(new CustomEvent('moniqr:ask'))}><span aria-hidden="true">›_</span> Ask</button>
         <form method="post" action="/logout" class="signout">
           <button type="submit" class="signout-btn fs12" title=${`Signed in as ${this.state.data?.email ?? ''}`}>Sign out</button>
         </form>

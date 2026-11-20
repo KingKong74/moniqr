@@ -288,6 +288,9 @@ input::placeholder { color: var(--n500); }
 .mq-menu-item:hover, .mq-menu-item:focus-visible { background: var(--wash-8); outline: none; }
 .mq-menu-item kbd { font-family: var(--font-mono); font-size: 11px; color: var(--n500); }
 .mq-glyph { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px; border-radius: 6px; background: var(--nav-bg); color: var(--mq-accent); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+/* Touch screens have no right-click, so the topbar and Home header carry an Ask button there instead. */
+.ask-touch span[aria-hidden] { font-family: var(--font-mono); font-weight: 700; }
+@media (hover: hover) and (pointer: fine) { .ask-touch { display: none; } }
 .mq-menu-hint { display: block; padding: 4px 10px 2px; font-size: 11px; color: var(--n500); }
 
 .mq-console { position: fixed; z-index: 55; right: max(20px, env(safe-area-inset-right)); bottom: max(20px, env(safe-area-inset-bottom)); width: min(560px, calc(100vw - 32px)); height: min(460px, calc(100dvh - 40px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--mq-line); border-radius: 14px; background: var(--mq-bg); color: var(--mq-text); font-family: var(--font-mono); font-size: 13px; line-height: 1.6; box-shadow: 0 24px 64px -20px rgb(0 0 0 / 0.55); animation: mq-pop 160ms var(--ease); }

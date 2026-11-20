@@ -3,6 +3,9 @@
 // (POST /chat); this page polls /api/chat/:id for the reply. moniqr can read the calendar, email and inbox
 // state here but cannot act, so nothing typed in the console sends, books, pays or changes anything.
 // The conversation lives in this tab's sessionStorage, so it survives a reload and clears when the tab closes.
+// Other scripts open it without importing this module (home.js is also served signed out) by dispatching
+//   window.dispatchEvent(new CustomEvent('moniqr:ask', { detail: { text, send } }))
+// which is how the touch-screen topbar button and the dashboard's Ask box reach it.
 import { Component, html, render } from '/vendor/preact-htm.js';
 
 const STORE = 'moniqr-console';
@@ -84,6 +87,12 @@ class MoniqrConsole extends Component {
       }
     };
     this.onAway = () => this.state.menu && this.setState({ menu: null });
+    this.onAsk = (e) => {
+      const text = typeof e.detail?.text === 'string' ? e.detail.text.trim() : '';
+      if (text && e.detail.send && !this.state.pending) this.setState({ draft: text, open: true, menu: null }, () => this.send());
+      else this.openConsole(text);
+    };
+    window.addEventListener('moniqr:ask', this.onAsk);
     window.addEventListener('contextmenu', this.onContext);
     window.addEventListener('pointerdown', this.onDown, true);
     window.addEventListener('keydown', this.onKey);
@@ -100,6 +109,7 @@ class MoniqrConsole extends Component {
     window.removeEventListener('keydown', this.onKey);
     window.removeEventListener('resize', this.onAway);
     window.removeEventListener('scroll', this.onAway, true);
+    window.removeEventListener('moniqr:ask', this.onAsk);
   }
 
   componentDidUpdate(_props, prev) {
