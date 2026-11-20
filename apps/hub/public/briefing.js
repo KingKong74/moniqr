@@ -122,6 +122,113 @@ function Timeline({ plan, isToday }) {
     <div class="bf-ticks">${ticks.map((h) => html`<span style=${{ left: pct(h) }}>${clock(h)}</span>`)}</div>`;
 }
 
+/** Backlog and brief schedule for the right-hand rail; loaded when the page opens. */
+export async function loadBriefExtras(app) {
+  const get = async (path) => {
+    try {
+      const r = await fetch(path, { headers: { accept: 'application/json' } });
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  };
+  const [backlog, settings] = await Promise.all([get('/api/backlog'), get('/api/settings')]);
+  app.setState({ briefExtras: { backlog, settings, loaded: true } });
+}
+
+/** Calendar events after tomorrow, up to 14 days out, plus dated proposals, grouped by Brisbane day. */
+export function agenda(events, actions, now) {
+  const today0 = Math.floor((now + BNE) / DAY) * DAY - BNE;
+  const from = today0 + 2 * DAY, to = today0 + 16 * DAY;
+  const items = [];
+  for (const e of events) {
+    if (e.response === 'declined') continue;
+    if (e.allDay) {
+      const s = Date.parse(`${e.start}T00:00:00+10:00`), en = Date.parse(`${e.end}T00:00:00+10:00`);
+      for (let d = Math.max(s, from); d < Math.min(en, to); d += DAY) items.push({ at: d, allDay: true, title: e.title });
+      continue;
+    }
+    const s = Date.parse(e.start);
+    if (s >= from && s < to) items.push({ at: s, title: e.title, end: Date.parse(e.end), location: e.location });
+  }
+  for (const a of actions) {
+    const c = a.proposed_action?.calendar;
+    if (a.status !== 'pending' || !c?.start || a.source_snapshot?.demo) continue;
+    const s = Date.parse(c.start);
+    if (s >= from && s < to) items.push({ at: s, title: c.title || a.title, allDay: c.type === 'reminder', proposed: a.id });
+  }
+  items.sort((a, b) => a.at - b.at || (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0));
+  const days = [];
+  for (const it of items) {
+    const key = Math.floor((it.at + BNE) / DAY);
+    let day = days.at(-1);
+    if (!day || day.key !== key) days.push(day = { key, d0: key * DAY - BNE, items: [] });
+    day.items.push(it);
+  }
+  return days;
+}
+
+function renderRail(app, data, now) {
+  const ex = app.state.briefExtras;
+  const cal = data.calendar ?? { status: 'disconnected', events: [] };
+  const days = cal.status === 'connected' ? agenda(cal.events, data.actionsError ? [] : data.actions?.items ?? [], now) : [];
+  const today0 = Math.floor((now + BNE) / DAY) * DAY - BNE;
+  let shown = 0;
+  const visible = [];
+  for (const d of days) { if (shown >= 12) break; visible.push({ ...d, items: d.items.slice(0, 12 - shown) }); shown += Math.min(d.items.length, 12 - shown); }
+  const hidden = days.reduce((n, d) => n + d.items.length, 0) - shown;
+
+  const sched = (ex?.settings?.schedules ?? []).filter((s) => s.enabled && s.next_run_at).sort((a, b) => Date.parse(a.next_run_at) - Date.parse(b.next_run_at))[0];
+  const nextAt = sched && Date.parse(sched.next_run_at);
+  const hoursAway = nextAt && Math.max(0, Math.round((nextAt - now) / HOUR));
+  const running = ex?.settings?.schedules?.find((s) => s.active_run);
+
+  const items = ex?.backlog?.items ?? [];
+  const plate = items.filter((i) => i.status === 'doing' || i.status === 'next');
+  const pile = items.filter((i) => i.status === 'backlog').length;
+
+  return html`<aside class="bf-rail" aria-label="Coming up">
+    <section class="bf-card">
+      <div class="row"><h3 class="grow">Coming up</h3><span class="fs12 muted">next 14 days</span></div>
+      ${cal.status !== 'connected'
+        ? html`<p class="fs13 muted">${cal.status === 'error' ? 'Google Calendar could not be read just now.' : 'Connect Google Calendar to see what is ahead.'}</p>`
+        : !visible.length ? html`<p class="fs13 muted">Nothing on the calendar after tomorrow.</p>`
+        : html`<div class="bf-agenda">${visible.map((d) => html`<div class="bf-agenda-day">
+            <div class="bf-agenda-date"><span class="bright">${fmt(d.d0 + 12 * HOUR, { weekday: 'short', day: 'numeric', month: 'short' })}</span><span class="fs11 muted">in ${Math.round((d.d0 - today0) / DAY)} days</span></div>
+            <div class="col" style="gap: 6px; min-width: 0;">${d.items.map((it) => html`<div class=${`bf-agenda-item ${it.proposed ? 'proposed' : ''}`}>
+              <span class="bf-agenda-time">${it.allDay ? 'All day' : clock(((it.at + BNE) % DAY) / HOUR)}</span>
+              <span class="bf-agenda-title" title=${[it.title, it.location].filter(Boolean).join(' · ')}>${it.title}</span>
+              ${it.proposed && html`<button type="button" class="bf-proposed" onClick=${() => app.openProposal(it.proposed)} title="Proposed by Moniqr, not on your calendar yet">Proposed</button>`}
+            </div>`)}</div>
+          </div>`)}
+          ${hidden > 0 && html`<span class="fs12 muted">${hidden} more after that</span>`}
+        </div>`}
+    </section>
+
+    ${ex?.settings && html`<section class="bf-card bf-next-brief">
+      <span class="fs12 muted">Next brief</span>
+      ${running ? html`<span class="fs15 bright">${running.kind === 'afternoon_brief' ? 'Afternoon' : 'Morning'} brief is being prepared</span>`
+        : sched ? html`<span class="fs15 bright">${sched.kind === 'afternoon_brief' ? 'Afternoon' : 'Morning'} brief · ${fmt(nextAt, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+            <span class="fs12 dim">${hoursAway < 1 ? 'within the hour' : `in ${hoursAway} hour${hoursAway === 1 ? '' : 's'}`}</span>`
+        : html`<span class="fs14 dim">No brief is scheduled.</span>`}
+      <button type="button" class="btn btn-ghost fs12" style="align-self: flex-start;" onClick=${() => app.openView('settings')}>Brief times ↗</button>
+    </section>`}
+
+    <section class="bf-card">
+      <div class="row"><h3 class="grow">On your plate</h3><span class="fs12 muted">from your backlog</span></div>
+      ${!ex?.loaded ? html`<p class="fs13 muted">Loading…</p>`
+        : !ex.backlog ? html`<p class="fs13 muted">The backlog could not be loaded.</p>`
+        : !plate.length ? html`<p class="fs13 muted">Nothing in Doing or Next.${pile ? ` ${pile} idea${pile === 1 ? '' : 's'} in the backlog.` : ''}</p>`
+        : html`<div class="col" style="gap: 2px;">${plate.slice(0, 6).map((i) => html`<div class="bf-plate-item">
+            <span class=${`bf-plate-dot p-${i.priority}`}></span>
+            <span class="bf-plate-title">${i.title}</span>
+            <span class=${`bf-plate-status ${i.status}`}>${i.status === 'doing' ? 'Doing' : 'Next'}</span>
+          </div>`)}
+          ${(plate.length > 6 || pile > 0) && html`<span class="fs12 muted" style="padding-top: 4px;">${[plate.length > 6 && `${plate.length - 6} more lined up`, pile && `${pile} in the backlog`].filter(Boolean).join(' · ')}</span>`}
+        </div>`}
+      <button type="button" class="btn btn-ghost fs12" style="align-self: flex-start;" onClick=${() => app.openView('backlog')}>Open backlog ↗</button>
+    </section>
+  </aside>`;
+}
+
 /** Renders the page. app is the dashboard component: its state, loaders and decision methods. */
 export function renderBriefing(app, v, src) {
   const { data } = app.state;
@@ -184,7 +291,7 @@ export function renderBriefing(app, v, src) {
   const notesOpen = !!app.state.briefNotesOpen;
   const error = app.state.actionError || app.state.findingError;
 
-  return html`<main class="main bf-page">
+  return html`<main class="main bf-page"><div class="bf-layout"><div class="bf-content">
     <div class="bf-hero">
       <div class="bf-head">
         <div class="bf-crumb">
@@ -280,6 +387,7 @@ export function renderBriefing(app, v, src) {
       ${notesOpen && html`<div class="brief-md bf-md" dangerouslySetInnerHTML=${{ __html: brief.html }}></div>`}
     </section>`}
 
+    </div>${renderRail(app, data, now)}</div>
     <footer class="bf-foot">
       <span>Sources: calendar ${cal.status === 'connected' ? '' : `(${cal.status === 'error' ? 'unavailable' : 'not connected'}) `}· email scan${scan?.updated_at ? ` ${fmt(Date.parse(scan.updated_at), { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''} · findings and proposals</span>
       ${limits.length > 0 && html`<span class="bf-limits" title=${limits.join(' ')}>${limits.length} limit${limits.length === 1 ? '' : 's'}</span>`}

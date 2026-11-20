@@ -10,7 +10,7 @@ import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
 import { projectSamples, financeSamples, knowledgeSamples, agentSamples, lifeSamples } from './dashboard-mocks.js';
 import { Home } from './home.js';
 import { Backlog } from './backlog.js';
-import { renderBriefing } from './briefing.js';
+import { renderBriefing, loadBriefExtras } from './briefing.js';
 import { mountConsole } from './console.js';
 
 import { applyTheme, initialTheme } from './theme.js';
@@ -322,6 +322,7 @@ class App extends Component {
   go = (view, anchor, actionId) => {
     if (this.state.personalBusy) return;
     if (view === 'settings') this.loadPersonal(view);
+    if (view === 'briefing') loadBriefExtras(this);
     const from = this.state.view;
     // Proposals live on the Inbox's Proposals tab; older links still ask for the dashboard's 'actions' anchor.
     const proposals = anchor === 'actions' || Boolean(actionId);

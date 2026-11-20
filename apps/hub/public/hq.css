@@ -914,3 +914,32 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
   .bf-days-note, .bf-md { padding-left: 0; }
   .bf-ev-time { display: none; }
 }
+
+/* The brief page's right-hand rail: what's coming up, the next brief and what's on your plate.
+   Beside the brief on wide screens (and it stays in view while you scroll); below it otherwise. */
+.bf-page { max-width: 1760px; }
+.bf-layout { display: flex; flex-direction: column; gap: 36px; min-width: 0; }
+.bf-content { display: flex; flex-direction: column; gap: 36px; min-width: 0; }
+.bf-rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; align-items: start; }
+.bf-card { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border-radius: 14px; background: var(--tile); box-shadow: 0 0 0 1px var(--tile-line); min-width: 0; }
+.bf-card h3 { font-size: 16px; }
+.bf-agenda { display: flex; flex-direction: column; gap: 12px; }
+.bf-agenda-day { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 12px; padding-top: 12px; border-top: 1px solid var(--wash-6); }
+.bf-agenda-day:first-child { padding-top: 0; border-top: 0; }
+.bf-agenda-date { display: flex; flex-direction: column; font-size: 13px; line-height: 1.35; }
+.bf-agenda-item { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; font-size: 13px; }
+.bf-agenda-time { font-family: var(--font-mono); font-size: 11px; color: var(--n500); white-space: nowrap; }
+.bf-agenda-title { color: var(--n200); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bf-agenda-item.proposed .bf-agenda-title { color: var(--n400); font-style: italic; }
+.bf-proposed { cursor: pointer; font: inherit; font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 1px 6px; border-radius: 6px; border: 1px dashed var(--a300); background: transparent; color: var(--a300); }
+.bf-next-brief { gap: 4px; background: color-mix(in srgb, var(--accent) 8%, var(--tile)); }
+.bf-plate-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 5px 0; font-size: 13px; }
+.bf-plate-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--n500); }
+.bf-plate-dot.p-high { background: var(--accent-2); } .bf-plate-dot.p-normal { background: var(--a300); }
+.bf-plate-title { color: var(--n200); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bf-plate-status { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--n500); }
+.bf-plate-status.doing { color: var(--a300); }
+@media (min-width: 1500px) {
+  .bf-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 40px; align-items: start; }
+  .bf-rail { grid-template-columns: minmax(0, 1fr); position: sticky; top: 20px; max-height: calc(100dvh - 40px); overflow-y: auto; scrollbar-width: none; }
+}

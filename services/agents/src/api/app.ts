@@ -181,7 +181,8 @@ export function createApp(opts: AppOptions) {
     const week = start.toISOString();
     try {
       if (!calendarCache || calendarCache.week !== week || calendarCache.expires < Date.now()) {
-        calendarPending ??= opts.calendar.listEvents(start, new Date(start.getTime() + 7 * 86_400_000));
+        // Three weeks from this Monday: the dashboard's week plus at least 14 days ahead for the brief.
+        calendarPending ??= opts.calendar.listEvents(start, new Date(start.getTime() + 21 * 86_400_000));
         try {
           const events = await calendarPending;
           calendarCache = { week, events, expires: Date.now() + 60_000 };

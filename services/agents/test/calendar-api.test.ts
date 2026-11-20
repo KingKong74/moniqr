@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { createApp } from '../src/api/app.js';
 import type { Pool } from '../src/db.js';
 
-test('calendar endpoint requires hub authentication, uses Brisbane week and caches reads', async () => {
+test('calendar endpoint requires hub authentication, reads three weeks from the Brisbane Monday and caches reads', async () => {
   let calls = 0;
   const app = createApp({
     pool: {} as Pool, apiToken: 'hub', runnerToken: 'runner', staleRunMs: 1000,
@@ -13,7 +13,7 @@ test('calendar endpoint requires hub authentication, uses Brisbane week and cach
       const local = new Date(start.getTime() + 10 * 3_600_000);
       assert.equal(local.getUTCDay(), 1);
       assert.equal(local.getUTCHours(), 0);
-      assert.equal(end.getTime() - start.getTime(), 7 * 86_400_000);
+      assert.equal(end.getTime() - start.getTime(), 21 * 86_400_000);
       return [{ title: 'Live event' }];
     } },
   });
