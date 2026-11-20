@@ -3,11 +3,29 @@ import type { Pool } from './db.js';
 import { withTransaction } from './db.js';
 import { nextFireAfter } from './scheduler.js';
 
-export const backlogInput = z.object({
+const backlogStep = z.object({ t: z.string().trim().min(1).max(240), done: z.boolean() }).strict();
+const backlogFields = {
   title: z.string().trim().min(1).max(240),
-  notes: z.string().trim().max(10000).default(''),
-  status: z.enum(['backlog', 'next', 'doing', 'done']).default('backlog'),
-  priority: z.enum(['low', 'normal', 'high']).default('normal'),
+  notes: z.string().trim().max(10000),
+  status: z.enum(['backlog', 'next', 'doing', 'done']),
+  priority: z.enum(['low', 'normal', 'high']),
+  steps: z.array(backlogStep).max(50),
+};
+export const backlogInput = z.object({
+  title: backlogFields.title,
+  notes: backlogFields.notes.default(''),
+  status: backlogFields.status.default('backlog'),
+  priority: backlogFields.priority.default('normal'),
+  steps: backlogFields.steps.default([]),
+}).strict();
+/** A change to one item. Only the fields sent change; place moves it to the top or bottom of its status. */
+export const backlogPatch = z.object({
+  title: backlogFields.title.optional(),
+  notes: backlogFields.notes.optional(),
+  status: backlogFields.status.optional(),
+  priority: backlogFields.priority.optional(),
+  steps: backlogFields.steps.optional(),
+  place: z.enum(['top', 'bottom']).optional(),
 }).strict();
 export const briefSettingsInput = z.object({
   morning: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -15,10 +33,36 @@ export const briefSettingsInput = z.object({
   morning_enabled: z.boolean(),
   afternoon_enabled: z.boolean(),
 }).strict().refine(b => b.morning < b.afternoon, 'The afternoon brief must be later than the morning brief.');
+
+/** Doing first, then Next, Backlog and Done; within a status, in the owner's order. */
 export async function listBacklog(pool: Pool) {
-  const { rows } = await pool.query(`SELECT * FROM backlog_items ORDER BY (status='done'),
-    CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, created_at DESC, id DESC`);
+  const { rows } = await pool.query(`SELECT * FROM backlog_items ORDER BY
+    CASE status WHEN 'doing' THEN 0 WHEN 'next' THEN 1 WHEN 'backlog' THEN 2 ELSE 3 END, position, id`);
   return { items: rows };
+}
+
+/** New items go to the bottom of their status. */
+export async function createBacklogItem(pool: Pool, b: z.infer<typeof backlogInput>) {
+  const { rows } = await pool.query(`INSERT INTO backlog_items (title,notes,status,priority,steps,position)
+    VALUES ($1,$2,$3,$4,$5,(SELECT coalesce(max(position), 0) + 1 FROM backlog_items)) RETURNING *`,
+    [b.title, b.notes, b.status, b.priority, JSON.stringify(b.steps)]);
+  return rows[0];
+}
+
+/** Returns null when the item does not exist. */
+export async function updateBacklogItem(pool: Pool, id: number, p: z.infer<typeof backlogPatch>) {
+  const { rows } = await pool.query(`UPDATE backlog_items SET
+      title = coalesce($2, title), notes = coalesce($3, notes), status = coalesce($4, status),
+      priority = coalesce($5, priority), steps = coalesce($6::jsonb, steps),
+      position = CASE $7::text
+        WHEN 'top' THEN (SELECT coalesce(min(position), 0) - 1 FROM backlog_items)
+        WHEN 'bottom' THEN (SELECT coalesce(max(position), 0) + 1 FROM backlog_items)
+        ELSE position END,
+      updated_at = now()
+    WHERE id = $1 RETURNING *`,
+    [id, p.title ?? null, p.notes ?? null, p.status ?? null, p.priority ?? null,
+      p.steps ? JSON.stringify(p.steps) : null, p.place ?? null]);
+  return rows[0] ?? null;
 }
 /** What the latest run of a kind actually did, so a missed or partial brief is visible. */
 const LAST_RUN = `LEFT JOIN LATERAL (

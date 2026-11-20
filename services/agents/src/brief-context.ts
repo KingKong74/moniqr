@@ -48,7 +48,11 @@ export async function adminContext(pool: Pool, opts: { actionCalendarId?: string
         AND status IN ('approved','rejected') AND coalesce(executed_at, decided_at, updated_at) >= $1
       ORDER BY coalesce(executed_at, decided_at, updated_at) DESC, id DESC LIMIT ${CONTEXT_LIMITS.outcomes}`, [outcomeSince]),
     listActions(pool, true, opts.actionCalendarId, opts.calendarWriteReady ?? false),
-    pool.query(`SELECT id,title,notes,status,priority FROM backlog_items WHERE status <> 'done'
+    pool.query(`SELECT id,title,notes,status,priority, jsonb_array_length(steps) AS step_count,
+        (SELECT count(*)::int FROM jsonb_array_elements(steps) s WHERE (s->>'done')::boolean) AS steps_done,
+        (SELECT s->>'t' FROM jsonb_array_elements(steps) WITH ORDINALITY AS e(s, n)
+          WHERE NOT (s->>'done')::boolean ORDER BY n LIMIT 1) AS next_step
+      FROM backlog_items WHERE status <> 'done'
       ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, updated_at DESC, id DESC LIMIT 40`),
   ]);
   return {

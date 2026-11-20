@@ -16,7 +16,7 @@ import { findingInput, scanInput, listFindings, saveFinding, saveScan } from '..
 import { proposalInput, decisionInput, proposeAction, listActions, getAction, decideAction, prepareCalendarAction, addFindingToCalendar, ownerCalendarInput } from '../actions.js';
 import type { CalendarWriter } from '../calendar-writer.js';
 import { executeCalendarAction } from '../calendar-executor.js';
-import { backlogInput, briefSettingsInput, listBacklog, briefSettings, saveBriefSettings } from '../personal.js';
+import { backlogInput, backlogPatch, createBacklogItem, updateBacklogItem, briefSettingsInput, listBacklog, briefSettings, saveBriefSettings } from '../personal.js';
 import { adminContext } from '../brief-context.js';
 
 function isValidCron(cron: string): boolean {
@@ -73,15 +73,12 @@ export function createApp(opts: AppOptions) {
 
   app.get('/backlog', hub, async (_req, res) => { res.json(await listBacklog(pool)); });
   app.post('/backlog', hub, async (req, res) => {
-    const b = backlogInput.parse(req.body);
-    const { rows } = await pool.query('INSERT INTO backlog_items (title,notes,status,priority) VALUES ($1,$2,$3,$4) RETURNING *', [b.title,b.notes,b.status,b.priority]);
-    res.status(201).json({ item: rows[0] });
+    res.status(201).json({ item: await createBacklogItem(pool, backlogInput.parse(req.body)) });
   });
   app.patch('/backlog/:id', hub, async (req, res) => {
-    const b = backlogInput.parse(req.body);
-    const { rows } = await pool.query('UPDATE backlog_items SET title=$2,notes=$3,status=$4,priority=$5,updated_at=now() WHERE id=$1 RETURNING *', [idParam.parse(req.params.id),b.title,b.notes,b.status,b.priority]);
-    if (!rows[0]) throw new NotFoundError('Backlog item not found.');
-    res.json({ item: rows[0] });
+    const item = await updateBacklogItem(pool, idParam.parse(req.params.id), backlogPatch.parse(req.body));
+    if (!item) throw new NotFoundError('Backlog item not found.');
+    res.json({ item });
   });
   app.get('/settings', hub, async (_req, res) => { res.json(await briefSettings(pool)); });
   app.put('/settings', hub, async (req, res) => { res.json(await saveBriefSettings(pool, briefSettingsInput.parse(req.body))); });

@@ -34,6 +34,28 @@ describe('personal backlog and brief settings', { skip: skipReason }, () => {
     assert.equal((await api.call('GET', '/backlog', API_TOKEN)).body.items.find((i: any) => i.id === item.id).status, 'done');
     assert.equal((await api.call('PATCH', '/backlog/99999', API_TOKEN, { title: 'Missing' })).status, 404);
   });
+  test('items keep steps, take partial changes and can be moved to the top or bottom of their status', async () => {
+    const add = async (title: string, extra = {}) => (await api.call('POST', '/backlog', API_TOKEN, { title, status: 'next', ...extra })).body.item;
+    const a = await add('Order A', { steps: [{ t: 'First', done: false }] });
+    const b = await add('Order B');
+    assert.deepEqual(a.steps, [{ t: 'First', done: false }]);
+    const nextIds = async () => (await api.call('GET', '/backlog', API_TOKEN)).body.items.filter((i: any) => i.status === 'next').map((i: any) => i.id);
+    assert.deepEqual((await nextIds()).slice(-2), [a.id, b.id]);
+    let r = await api.call('PATCH', `/backlog/${b.id}`, API_TOKEN, { place: 'top' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.item.title, 'Order B');
+    assert.equal((await nextIds())[0], b.id);
+    r = await api.call('PATCH', `/backlog/${a.id}`, API_TOKEN, { steps: [{ t: 'First', done: true }, { t: 'Second', done: false }] });
+    assert.equal(r.body.item.notes, '');
+    assert.equal(r.body.item.status, 'next');
+    const context = await adminContext(pool);
+    const seen = context.personal_backlog.items.find((i: any) => i.id === a.id);
+    assert.equal(seen.next_step, 'Second');
+    assert.equal(seen.steps_done, 1);
+    assert.equal((await api.call('PATCH', `/backlog/${a.id}`, API_TOKEN, { steps: [{ t: '', done: false }] })).status, 400);
+    assert.equal((await api.call('PATCH', `/backlog/${a.id}`, API_TOKEN, { place: 'middle' })).status, 400);
+    assert.equal((await api.call('PATCH', `/backlog/${a.id}`, API_TOKEN, { steps: Array.from({ length: 51 }, () => ({ t: 'x', done: false })) })).status, 400);
+  });
   test('both daily schedules run at the Brisbane times, once per slot', async () => {
     await tick(pool, new Date('2026-11-16T18:00:00Z'));
     let queued = await tick(pool, new Date('2026-11-16T21:00:00Z'));

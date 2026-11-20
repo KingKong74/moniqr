@@ -212,10 +212,12 @@ export function createApp(opts: HubOptions) {
     );
   });
 
+  const BACKLOG_NEW = ['title', 'notes', 'status', 'priority', 'steps'] as const;
+  const BACKLOG_PATCH = [...BACKLOG_NEW, 'place'] as const;
   app.get('/api/backlog', async (_req, res) => { res.json(await opts.agents.backlog!()); });
   app.get('/api/settings', async (_req, res) => { res.json(await opts.agents.settings!()); });
   for (const path of ['/backlog', '/backlog/:id', '/settings']) {
-    app.post(path, express.urlencoded({ extended: false, limit: '16kb' }), async (req, res) => {
+    app.post(path, express.urlencoded({ extended: false, limit: '16kb' }), express.json({ limit: '64kb' }), async (req, res) => {
       if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });
       try {
         if (path === '/settings') {
@@ -226,7 +228,10 @@ export function createApp(opts: HubOptions) {
           const id = req.params.id === undefined ? undefined : Number(req.params.id);
           if (id !== undefined && (!Number.isSafeInteger(id) || id <= 0)) return void res.status(400).json({ error: 'Invalid backlog item.' });
           const b = req.body ?? {};
-          res.json(await opts.agents.saveBacklog!({ title: b.title, notes: b.notes ?? '', status: b.status, priority: b.priority }, id));
+          // Only the known fields pass through; the agent API validates them.
+          const keys = id === undefined ? BACKLOG_NEW : BACKLOG_PATCH;
+          const item = Object.fromEntries(keys.filter(k => b[k] !== undefined).map(k => [k, b[k]]));
+          res.json(await opts.agents.saveBacklog!(item, id));
         }
       } catch (err) {
         if (err instanceof AgentApiError && [400,404,409].includes(err.status)) return void res.status(err.status).json({ error: err.message });

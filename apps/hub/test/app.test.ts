@@ -449,6 +449,10 @@ test('backlog and settings require a session and same-origin writes', async () =
   let r = await fetch(base + '/backlog', {method:'POST',headers:{...authed,origin:ORIGIN},body:new URLSearchParams({title:'Chatbot',notes:'Later',status:'backlog',priority:'normal'})});
   assert.equal(r.status, 200);
   assert.deepEqual(personalWrites.at(-1), {item:{title:'Chatbot',notes:'Later',status:'backlog',priority:'normal'},id:undefined});
+  r = await fetch(base + '/backlog/7', {method:'POST',headers:{...authed,origin:ORIGIN,'content-type':'application/json'},
+    body:JSON.stringify({steps:[{t:'Call',done:true}],place:'top',id:99,extra:'dropped'})});
+  assert.equal(r.status, 200);
+  assert.deepEqual(personalWrites.at(-1), {item:{steps:[{t:'Call',done:true}],place:'top'},id:7});
   r = await fetch(base + '/settings', {method:'POST',headers:{...authed,origin:ORIGIN},body:new URLSearchParams({morning:'07:00',afternoon:'16:30',morning_enabled:'on'})});
   assert.equal(r.status, 200);
   assert.deepEqual(personalWrites.at(-1), {morning:'07:00',afternoon:'16:30',morning_enabled:true,afternoon_enabled:false});

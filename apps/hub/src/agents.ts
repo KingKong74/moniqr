@@ -109,10 +109,14 @@ export class AgentApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
+export interface BacklogStep { t: string; done: boolean }
 export interface BacklogItem {
   id: number; title: string; notes: string;
   status: 'backlog' | 'next' | 'doing' | 'done'; priority: 'low' | 'normal' | 'high';
+  steps: BacklogStep[]; position: number; created_at: string; updated_at: string;
 }
+/** A new item, or the fields to change on one. place moves it to the top or bottom of its status. */
+export type BacklogWrite = Partial<Pick<BacklogItem, 'title' | 'notes' | 'status' | 'priority' | 'steps'>> & { place?: 'top' | 'bottom' };
 export interface BriefSettings {
   timezone: string;
   schedules: {
@@ -143,7 +147,7 @@ export interface AgentsClient {
   chat?(messages: ChatMessage[]): Promise<{ id: number }>;
   chatStatus?(id: number): Promise<ChatStatus>;
   backlog?(): Promise<{ items: BacklogItem[] }>;
-  saveBacklog?(item: Omit<BacklogItem, 'id'>, id?: number): Promise<{ item: BacklogItem }>;
+  saveBacklog?(item: BacklogWrite, id?: number): Promise<{ item: BacklogItem }>;
   settings?(): Promise<BriefSettings>;
   saveSettings?(settings: BriefSettingsInput): Promise<BriefSettings>;
   actions(): Promise<ActionsData>;
