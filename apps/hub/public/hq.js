@@ -1467,7 +1467,7 @@ class App extends Component {
                 aria-pressed=${f.id === selected.id} onClick=${() => this.setState({ sel: f.id })}>
                 <span class="dot" style=${`background: ${f.status === 'new' ? 'var(--accent-2)' : 'transparent'};`}></span>
                 <span class="col" style="gap: 4px; min-width: 0;">
-                  <span class="fs12 muted">${labels[f.category]} · ${statuses[f.status]}</span>
+                  <span class="fs12 muted">${labels[f.category]} · ${statuses[f.status]}${f.found_by ? ` · ${f.found_by}` : ''}</span>
                   <span class="fs14 text ellipsis">${f.subject}</span>
                   <span class="fs13 muted ellipsis">${f.summary}</span>
                 </span>
@@ -1480,6 +1480,7 @@ class App extends Component {
               <div class="col fs12 muted" style="overflow-wrap: anywhere;">
                 <span>Sender as shown: ${selected.sender || '(not stated)'}</span>
                 <span>Received ${when(selected.received_at)}</span>
+                ${selected.found_by && html`<span>Found by ${selected.found_by}, one of your agents</span>`}
               </div>
               <div class="col"><span class="fs12 muted">Source evidence</span>
                 <blockquote class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${selected.evidence}</blockquote></div>

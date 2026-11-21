@@ -4,7 +4,7 @@ How moniqr's agents get more power over time without any one bug, prompt injecti
 
 ## Where it stands (Nov 2026)
 
-- Workers have a tick list of read-only tools (daily admin, calendar list and events, email search and read). Their only write is a report.
+- Workers have a tick list of read-only tools (daily admin, calendar list and events, email search and read), plus one level 2 write: **save email findings** (approved 2026-11-21). A finding needs Email read, cites a message the worker read in that run, lands in the Inbox credited to the agent, and waits for Bailey's review. Beyond that, a worker's only write is its report.
 - Workers run when Bailey or the EA hands them a task, or on their own schedules (at most hourly, Brisbane time).
 - The EA can hand out tasks but can only *ask* to create or change an agent or add a schedule. Bailey approves each ask in the hub.
 - The only outward action anywhere is the EA's calendar add, and only to one calendar, under owner-set auto-add rules or approval.
@@ -56,7 +56,7 @@ The payment instrument is the real safety net. Use a **virtual card per agent or
 
 ## Suggested order
 
-1. **Level 2 for workers.** Let a worker save findings and backlog suggestions. Low risk, and it makes reports actionable.
+1. **Level 2 for workers.** Saving findings: *done 2026-11-21.* Backlog suggestions would be the next level 2 write.
 2. **Level 3, prepared carts and email drafts.** Purchases and replies arrive as proposals. Bailey acts himself. Still no outward credentials.
 3. **Level 3 with executors.** Send an approved email reply, and place an approved order through one merchant API.
 4. **Budgets with a virtual card.** Start at level 5 for one agent, one merchant and a small cap, with every spend logged and shown in the brief.

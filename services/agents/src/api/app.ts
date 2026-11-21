@@ -344,7 +344,8 @@ export function createApp(opts: AppOptions) {
   app.post('/runs/:id/findings', async (req, res) => {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
-    if (!token || !(await checkRunToken(pool, id, token, { write: true }))) return void res.status(401).json({ error: 'Unauthorised' });
+    // Workers granted save_email_finding may save findings too; nothing else of the EA's.
+    if (!token || !(await checkRunToken(pool, id, token, { write: true, tool: 'save_email_finding' }))) return void res.status(401).json({ error: 'Unauthorised' });
     const finding = await saveFinding(pool, id, findingInput.parse(req.body));
     res.status(201).json({ finding });
   });

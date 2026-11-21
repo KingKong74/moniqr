@@ -2,6 +2,9 @@ import type { Pool } from './db.js';
 import { withTransaction } from './db.js';
 import { hashToken, newToken, safeEqual } from './tokens.js';
 
+/** The only writes a worker can be granted: moniqr's own records, never the EA's briefs, proposals or outward actions. */
+const WORKER_WRITES = new Set(['save_email_finding']);
+
 export type Trigger = 'schedule' | 'manual' | 'inbox' | 'delegated';
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed';
 
@@ -133,7 +136,7 @@ export async function checkRunToken(
   // A worker's token only reaches its own report and the reads ticked for it, never the EA's writes.
   const worker = row.role === 'worker';
   if (opts.worker) return worker && row.kind === 'task';
-  if (worker) return !opts.write && opts.tool !== undefined && row.tools.includes(opts.tool);
+  if (worker) return opts.tool !== undefined && row.tools.includes(opts.tool) && (!opts.write || WORKER_WRITES.has(opts.tool));
   if (opts.write && row.kind === 'chat') return false;
   return true;
 }

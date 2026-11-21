@@ -248,4 +248,35 @@ describe('workforce', { skip: skipReason }, () => {
     detail = await api.call('GET', '/workforce/agents/researcher', API_TOKEN);
     assert.deepEqual(detail.body.schedules.map((s: any) => [s.cron, s.task, s.enabled]), [['0 8 * * 1', 'List bills due this week', true]]);
   });
+
+  test('a worker granted save_email_finding saves findings to the Inbox, credited to it, and nothing else of the EA\'s', async () => {
+    const needsRead = await api.call('POST', '/workforce/agents', API_TOKEN, { ...researcher, slug: 'clerk', name: 'Bills Clerk', tools: ['search_email', 'save_email_finding'] });
+    assert.equal(needsRead.status, 400, 'saving findings needs Email read');
+    assert.match(JSON.stringify(needsRead.body), /Save email findings needs Email read/);
+    const created = await api.call('POST', '/workforce/agents', API_TOKEN, { ...researcher, slug: 'clerk', name: 'Bills Clerk', tools: ['read_email', 'save_email_finding', 'search_email'] });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal((await api.call('PATCH', '/workforce/agents/clerk', API_TOKEN, { tools: ['save_email_finding'] })).status, 400);
+
+    await api.call('POST', '/workforce/agents/clerk/tasks', API_TOKEN, { task: 'Find bills' });
+    const claimed = (await claimNextRun(pool, 60_000))!;
+    assert.equal(claimed.agent.slug, 'clerk');
+    const finding = {
+      message_id: 'msg-clerk-1', thread_id: 'thr-1', category: 'bill', sender: 'Urban Utilities <bills@example.com>', subject: 'Your water bill',
+      received_at: '2026-11-20T09:00:00+10:00', summary: 'Water bill $351.49 due 5 Dec', evidence: 'Amount due $351.49', deadline_text: 'Due 5 December 2026',
+    };
+    const saved = await api.call('POST', `/runs/${claimed.run.id}/findings`, claimed.runToken, finding);
+    assert.equal(saved.status, 201, JSON.stringify(saved.body));
+    for (const [path, body] of [['brief', { body_md: 'x', summary: 'x' }], ['actions', {}], ['email-scan', { status: 'completed', searches: 1, messages_read: 1, failures: 0 }]] as const) {
+      assert.equal((await api.call('POST', `/runs/${claimed.run.id}/${path}`, claimed.runToken, body)).status, 401, path);
+    }
+    const inbox = await api.call('GET', '/findings', API_TOKEN);
+    const row = inbox.body.items.find((f: { message_id: string }) => f.message_id === 'msg-clerk-1');
+    assert.equal(row.found_by, 'Bills Clerk');
+    assert.equal(row.status, 'new', 'it waits for Bailey like any finding');
+
+    // Ungranting takes effect at once, mid-run.
+    await api.call('PATCH', '/workforce/agents/clerk', API_TOKEN, { tools: ['read_email', 'search_email'] });
+    assert.equal((await api.call('POST', `/runs/${claimed.run.id}/findings`, claimed.runToken, { ...finding, message_id: 'msg-clerk-2' })).status, 401);
+    await cleanup(claimed.run.id);
+  });
 });

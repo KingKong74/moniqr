@@ -992,3 +992,4 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 .wf-side-link:focus-visible { outline: 2px solid var(--a300); outline-offset: 2px; border-radius: 4px; }
 @media (max-width: 900px) { .wf-editor-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) { .wf .field { font-size: 16px; } .wf-diff { grid-template-columns: minmax(0, 1fr); } }
+.wf-tool-write { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--a300); }

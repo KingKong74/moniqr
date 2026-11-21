@@ -107,7 +107,11 @@ export class Workforce extends Component {
     });
   }
   toggleTool(tool) {
-    const tools = this.state.form.tools.includes(tool) ? this.state.form.tools.filter((t) => t !== tool) : [...this.state.form.tools, tool];
+    const all = this.state.data.tools;
+    let tools = this.state.form.tools.includes(tool) ? this.state.form.tools.filter((t) => t !== tool) : [...this.state.form.tools, tool];
+    // Ticking a write ticks the read it needs; unticking that read unticks the write.
+    if (tools.includes(tool) && all[tool]?.requires && !tools.includes(all[tool].requires)) tools.push(all[tool].requires);
+    if (!tools.includes(tool)) tools = tools.filter((t) => all[t]?.requires !== tool);
     this.setField('tools', tools);
   }
 
@@ -243,7 +247,7 @@ export class Workforce extends Component {
             <div class="between"><span class="fs12 muted">${a.last_run ? `Last task ${ago(a.last_run.queued_at)}` : 'No tasks yet'}</span><span class=${`dashboard-status ${s.cls}`}>${s.label}</span></div>
             <h3>${a.name}</h3>
             <p class="fs13 soft">${a.description || html`<span class="dim">No description</span>`}</p>
-            <div class="row wrap wf-tools">${a.tools.length ? a.tools.map((t) => html`<span class="wf-tool">${data.tools[t]?.label ?? t}</span>`) : html`<span class="fs12 dim">No data tools</span>`}</div>
+            <div class="row wrap wf-tools">${a.tools.length ? a.tools.map((t) => html`<span class=${`wf-tool${data.tools[t]?.level === 'write' ? ' wf-tool-write' : ''}`}>${data.tools[t]?.label ?? t}</span>`) : html`<span class="fs12 dim">No data tools</span>`}</div>
             <span class="fs12 muted">${a.reports} ${a.reports === 1 ? 'report' : 'reports'}${a.schedules ? ` · ${a.enabled ? `next run ${when(a.next_run_at)}` : `${a.schedules} schedule${a.schedules === 1 ? '' : 's'} paused`}` : ''}</span>
           </button>`;
         })}
@@ -268,11 +272,12 @@ export class Workforce extends Component {
             <input class="field" maxlength="500" value=${form.description} onInput=${(e) => this.setField('description', e.target.value)} /></label>
           <label class="col">Instructions <span class="fs12 muted">Markdown. Who it is, what it does and how to write its report.</span>
             <textarea class="field wf-instructions" required rows="10" maxlength="20000" value=${form.instructions_md ?? ''} onInput=${(e) => this.setField('instructions_md', e.target.value)}></textarea></label>
-          <fieldset class="col wf-toolset"><legend>Tools <span class="fs12 muted">All read-only</span></legend>
-            ${Object.entries(data.tools).map(([key, t]) => html`<label class="row wf-tool-option">
+          ${[['read', 'Can read', 'Looks only'], ['write', 'Can write to moniqr', 'Changes only moniqr’s own records; never sends, pays or books']].map(([level, title, note]) => html`
+          <fieldset class="col wf-toolset"><legend>${title} <span class="fs12 muted">${note}</span></legend>
+            ${Object.entries(data.tools).filter(([, t]) => (t.level ?? 'read') === level).map(([key, t]) => html`<label class="row wf-tool-option">
               <input type="checkbox" checked=${form.tools.includes(key)} onChange=${() => this.toggleTool(key)} />
-              <span class="col"><span>${t.label}</span><span class="fs12 muted">${t.detail}</span></span></label>`)}
-          </fieldset>
+              <span class="col"><span>${t.label}</span><span class="fs12 muted">${t.detail}${t.requires ? `. Needs ${data.tools[t.requires]?.label ?? t.requires}.` : ''}</span></span></label>`)}
+          </fieldset>`)}
           <label class="row"><input type="checkbox" checked=${form.enabled} onChange=${(e) => this.setField('enabled', e.target.checked)} /> Active <span class="fs12 muted">A paused agent takes no tasks.</span></label>
           ${formError && html`<p class="fs14 coral" role="alert">${formError}</p>`}
           <div class="row"><button class="btn btn-primary" type="submit" disabled=${saving}>${saving ? 'Saving…' : isNew ? 'Create agent' : 'Save changes'}</button></div>

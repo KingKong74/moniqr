@@ -53,6 +53,8 @@ export interface EmailFinding {
   deadline_text: string;
   missing_details: string[];
   status: 'new' | 'reviewed' | 'dismissed';
+  /** The worker agent that first saved it; null when the EA did. */
+  found_by?: string | null;
 }
 
 export interface FindingsData {
@@ -147,7 +149,7 @@ export interface DailyPick { items: { kind: string; text: string; sub: string }[
 export type CheckinWrite = Partial<Pick<Checkin, 'mood' | 'energy' | 'note'>>;
 
 /** The workforce: agents Bailey manages that work for the EA. */
-export interface WorkerTool { label: string; detail: string; google?: boolean }
+export interface WorkerTool { label: string; detail: string; level: 'read' | 'write'; google?: boolean; requires?: string }
 export interface WorkforceAgent {
   id: number; slug: string; name: string; role: 'worker'; description: string; instructions_md: string;
   tools: string[]; enabled: boolean; created_at: string; updated_at: string;

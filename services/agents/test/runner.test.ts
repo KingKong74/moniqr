@@ -50,6 +50,10 @@ test("a worker's allowlist is its report plus the read-only tools ticked for it"
   assert.deepEqual(allowedTools({ google: true }, 'task', worker), ['mcp__agents__write_report', 'mcp__agents__get_daily_admin', 'mcp__agents__search_email'],
     'anything outside the read-only set is dropped even if it reached the database');
   assert.deepEqual(allowedTools({ google: false }, 'task', worker), ['mcp__agents__write_report', 'mcp__agents__get_daily_admin'], 'Google tools need Google');
+  const clerk = { role: 'worker', tools: ['read_email', 'save_email_finding', 'search_email'] };
+  assert.deepEqual(allowedTools({ google: true }, 'task', clerk), ['mcp__agents__write_report', 'mcp__agents__read_email', 'mcp__agents__save_email_finding', 'mcp__agents__search_email'],
+    'a granted write is offered');
+  assert.deepEqual(allowedTools({ google: false }, 'task', clerk), ['mcp__agents__write_report'], 'and needs Google like the reads it works on');
   assert.deepEqual(allowedTools({ google: true }, 'chat', worker), allowedTools({ google: true }, 'task', worker), "a worker never gets the EA's kinds");
 });
 
@@ -299,6 +303,16 @@ describe('runner', { skip: skipReason }, () => {
     assert.ok(!seen.envKeys.some((k: string) => k.startsWith('GOOGLE_')), 'and Codex itself never sees it');
     assert.equal((await finishRun(pool, claimed.run.id, outcome)).status, 'done');
     assert.equal((await pool.query('SELECT data FROM reports WHERE run_id = $1', [claimed.run.id])).rows[0].data.summary, 'Found it.');
+  });
+
+  test('a worker granted findings is offered save_email_finding and told how to use it, but still no EA tools', async () => {
+    const claimed = await workerTask('clerk', ['read_email', 'save_email_finding', 'search_email']);
+    assert.match(buildPrompt(claimed, new Date('2026-10-26T20:30:00Z'), { google: true }), /save it with save_email_finding/);
+    const outcome = await executeRun(claimed, { apiUrl: api.baseUrl, codexHome: testHome, catalogPath, codexBin: fixture('fake-codex-worker.mjs'), timeoutMs: 30_000, google });
+    assert.equal(outcome.status, 'done', outcome.error);
+    const seen = JSON.parse((outcome.result as { result: string }).result);
+    assert.deepEqual(seen.tools.sort(), ['read_email', 'save_email_finding', 'search_email', 'write_report']);
+    await finishRun(pool, claimed.run.id, outcome);
   });
 
   test('a worker with no Google tool gets no Google credentials', async () => {

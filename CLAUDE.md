@@ -18,6 +18,7 @@ Follow [AGENTS.md](AGENTS.md): completed changes must be committed, pushed and m
 - Every write an agent makes goes through an MCP tool, which calls the agent API with a per-run token. The runner has no database credentials.
 - Google access is read-only, with one exception Bailey approved on 2026-11-01: the EA may add calendar events. That tool only creates events. It never edits or deletes, and it writes only to the calendar named in the environment. An event goes straight in only when it matches the auto-add rules Bailey sets in the environment (sender and kind). Everything else becomes a pending approval, and the EA can never change those rules. Events it adds are tagged as moniqr's, so the hub can undo them. Anything else that sends, pays, books or deletes becomes an approval for Bailey.
 - Notifications go only to fixed recipients set in the environment, never to addresses an agent chooses.
+- Worker agents (the workforce) get only the tools Bailey ticks for each one, from a fixed set in `services/agents/src/workforce.ts`, and the API checks every call against that grant. Reads plus writes to moniqr's own records only. Bailey approved saving email findings on 2026-11-21. Workers never get outward actions, proposals or the EA's tools. The EA can hand them tasks but can only ask Bailey to create or change an agent. Further steps are in `docs/workforce-permissions.md` and each needs his approval.
 
 ## Layout
 

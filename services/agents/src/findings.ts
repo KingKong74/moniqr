@@ -66,8 +66,10 @@ export function saveScan(pool: Pool, runId: number, input: z.infer<typeof scanIn
 
 export async function listFindings(pool: Pool) {
   const [items, scans, count] = await Promise.all([
-    pool.query(`SELECT * FROM email_findings
-      ORDER BY CASE status WHEN 'new' THEN 0 WHEN 'reviewed' THEN 1 ELSE 2 END, received_at DESC, id DESC LIMIT 200`),
+    // found_by names the worker that first saved a finding; the EA's own are null.
+    pool.query(`SELECT f.*, CASE WHEN a.role = 'worker' THEN a.name END AS found_by
+      FROM email_findings f JOIN runs r ON r.id = f.first_run_id JOIN agents a ON a.id = r.agent_id
+      ORDER BY CASE f.status WHEN 'new' THEN 0 WHEN 'reviewed' THEN 1 ELSE 2 END, f.received_at DESC, f.id DESC LIMIT 200`),
     pool.query(`SELECT r.id AS run_id, r.status AS run_status, r.queued_at, r.finished_at,
         s.status, s.searches, s.messages_read, s.failures, s.updated_at,
         (SELECT max(s2.updated_at) FROM email_scans s2 JOIN runs r2 ON r2.id=s2.run_id

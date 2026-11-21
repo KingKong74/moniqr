@@ -14,14 +14,18 @@ import { withTransaction } from './db.js';
 import { ConflictError, NotFoundError } from './runs.js';
 import { minGapMinutes, nextFireAfter } from './scheduler.js';
 
-/** Everything a worker could be given. All of it is read-only; nothing here sends, pays, books or deletes. */
+/**
+ * Everything a worker could be given. Reads look at data; writes change only moniqr's own records
+ * (level 2 in docs/workforce-permissions.md). Nothing here sends, pays, books or deletes.
+ */
 export const WORKER_TOOLS = {
-  get_daily_admin: { label: 'Daily admin', detail: 'Open email findings, pending decisions, outcomes and the personal backlog' },
-  list_calendars: { label: 'Calendar list', detail: "The names of Bailey's Google calendars", google: true },
-  get_events: { label: 'Calendar events', detail: 'Read events across all calendars', google: true },
-  search_email: { label: 'Email search', detail: 'Search Gmail (spam and trash left out)', google: true },
-  read_email: { label: 'Email read', detail: 'Read one email found by a search', google: true },
-} as const satisfies Record<string, { label: string; detail: string; google?: boolean }>;
+  get_daily_admin: { label: 'Daily admin', detail: 'Open email findings, pending decisions, outcomes and the personal backlog', level: 'read' },
+  list_calendars: { label: 'Calendar list', detail: "The names of Bailey's Google calendars", level: 'read', google: true },
+  get_events: { label: 'Calendar events', detail: 'Read events across all calendars', level: 'read', google: true },
+  search_email: { label: 'Email search', detail: 'Search Gmail (spam and trash left out)', level: 'read', google: true },
+  read_email: { label: 'Email read', detail: 'Read one email found by a search', level: 'read', google: true },
+  save_email_finding: { label: 'Save email findings', detail: 'Add bills, deadlines and replies it reads to your Inbox for review', level: 'write', google: true, requires: 'read_email' },
+} as const satisfies Record<string, { label: string; detail: string; level: 'read' | 'write'; google?: boolean; requires?: string }>;
 export type WorkerTool = keyof typeof WORKER_TOOLS;
 const WORKER_TOOL_NAMES = Object.keys(WORKER_TOOLS) as [WorkerTool, ...WorkerTool[]];
 export const isGoogleTool = (t: string) => Boolean((WORKER_TOOLS as Record<string, { google?: boolean }>)[t]?.google);
@@ -53,7 +57,14 @@ const slug = z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9-]{1,39}$/, 'Us
 const name = z.string().trim().min(1).max(60);
 const description = z.string().trim().max(500);
 const instructions = z.string().trim().min(1).max(20_000);
-const tools = z.array(z.enum(WORKER_TOOL_NAMES)).max(WORKER_TOOL_NAMES.length).transform((t) => [...new Set(t)].sort());
+const tools = z.array(z.enum(WORKER_TOOL_NAMES)).max(WORKER_TOOL_NAMES.length).transform((t) => [...new Set(t)].sort())
+  .superRefine((list, ctx) => {
+    // A write that works on what the agent read needs that read too.
+    for (const t of list) {
+      const needs = (WORKER_TOOLS[t] as { requires?: WorkerTool }).requires;
+      if (needs && !list.includes(needs)) ctx.addIssue({ code: 'custom', message: `${WORKER_TOOLS[t].label} needs ${WORKER_TOOLS[needs].label}` });
+    }
+  });
 
 export const agentInput = z.object({
   slug, name, description: description.default(''), instructions_md: instructions, tools: tools.default([]), enabled: z.boolean().default(true),

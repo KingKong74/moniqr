@@ -292,7 +292,8 @@ if (google) {
     },
   );
 
-  if (!chatRun && !workerRun && offer('save_email_finding')) server.registerTool('save_email_finding', {
+  // A worker may be granted this; the API checks the grant again on every save.
+  if (!chatRun && offer('save_email_finding')) server.registerTool('save_email_finding', {
     title: 'Save email finding',
     description: 'Save a useful bill/deadline, commitment or reply-needed finding from a message read in this run. ' +
       'One finding per message and category; repeat scans update it without undoing Bailey’s review or dismissal. ' +
