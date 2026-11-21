@@ -19,7 +19,7 @@
   --wash-4: rgb(18 19 42 / 0.05);
   --wash-6: rgb(18 19 42 / 0.08);
   --wash-8: rgb(18 19 42 / 0.11);
-  --nav-bg: #ea7548;
+  --nav-bg: #0f0e0d;
   --shadow: rgb(18 19 42 / 0.16);
   --font-body: "Barlow", system-ui, sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -134,17 +134,13 @@ input::placeholder { color: var(--n500); }
 
 /* — shell — */
 .shell { min-height: 100vh; display: flex; }
-/* The sidebar: the peach-orange accent with deep navy text in light mode, indigo night in dark mode.
-   The active tab is a solid white pill; the logo sits on a white tile so it shows against the orange. */
+/* The sidebar: near-black (#0F0E0D) with warm cream text and the peach accent in light mode,
+   indigo night in dark mode. */
 .nav { width: 216px; flex-shrink: 0; display: flex; flex-direction: column; gap: 28px; padding: 22px 14px; color: var(--n200);
-  background: linear-gradient(180deg, #f08a5c 0%, var(--nav-bg) 55%, #e4643a 100%); box-shadow: inset -1px 0 0 rgb(120 40 10 / 0.18);
-  --n100: #1a1236; --n200: #1a1236; --n300: #261c44; --n400: #2a1f47; --n500: rgb(26 18 54 / 0.72); --n600: rgb(26 18 54 / 0.5);
-  --wash-6: rgb(255 255 255 / 0.28); --wash-8: #fff6f0; --accent: #1a1236; --on-accent: #ffffff; }
-:root:not([data-theme="dark"]) .nav .brand-mark { background: #ffffff; border-radius: 8px; box-shadow: 0 1px 2px rgb(120 40 10 / 0.25); }
-:root:not([data-theme="dark"]) .nav .brand-mark img { inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
-:root:not([data-theme="dark"]) .nav .nav-item.on { box-shadow: 0 1px 2px rgb(120 40 10 / 0.2); }
-:root:not([data-theme="dark"]) .nav .up-next { background: #fff6f0; box-shadow: 0 1px 2px rgb(120 40 10 / 0.2); }
-:root[data-theme="dark"] .nav { background: var(--nav-bg); box-shadow: none; --accent: #6c63ff; --on-accent: #ffffff;
+  background: var(--nav-bg); box-shadow: none;
+  --n100: #fffcf8; --n200: rgb(255 252 248 / 0.88); --n300: rgb(255 252 248 / 0.8); --n400: rgb(255 252 248 / 0.68); --n500: rgb(255 252 248 / 0.52); --n600: rgb(255 252 248 / 0.34);
+  --wash-6: rgb(255 252 248 / 0.07); --wash-8: rgb(255 252 248 / 0.13); --live: oklch(0.78 0.14 150); }
+:root[data-theme="dark"] .nav { background: var(--nav-bg); box-shadow: none;
   --n100: #fffcf8; --n200: rgb(255 252 248 / 0.86); --n300: rgb(255 252 248 / 0.78); --n400: rgb(255 252 248 / 0.64); --n500: rgb(255 252 248 / 0.5); --n600: rgb(255 252 248 / 0.32);
   --wash-6: rgb(255 252 248 / 0.06); --wash-8: rgb(255 252 248 / 0.12); --live: oklch(0.78 0.14 150); }
 /* On desktop the sidebar is the window's height and stays put; a tall Workforce list scrolls inside it,
@@ -1006,5 +1002,5 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 :root:not([data-theme="dark"]) .bf-open { background: linear-gradient(90deg, #fde2d4, transparent); }
 :root:not([data-theme="dark"]) :is(.deadline, .forgot, .bf-ev.c1) { background: #f9dbe6; }
 :root:not([data-theme="dark"]) .bf-ev.c2 { background: #f6dccd; }
-:root:not([data-theme="dark"]) :is(.composer, .up-next, .search input, .journal, .filters, .reader, .cal-add, .cal-field input) { background: #e6e8f0; }
+:root:not([data-theme="dark"]) :is(.composer, .search input, .journal, .filters, .reader, .cal-add, .cal-field input) { background: #e6e8f0; }
 .prop-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; line-height: 1.55; color: var(--n100); background: var(--wash-4); border-radius: 10px; padding: 12px 14px; margin: 0; }
