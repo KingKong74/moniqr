@@ -157,10 +157,9 @@ input::placeholder { color: var(--n500); }
 .nav-item.soon:hover { background: transparent; }
 .nav .items { gap: 18px; }
 .nav-group { gap: 2px; }
-/* Group headings read as labels, not tabs: tiny bold caps with a hairline running off to the right. */
-.nav-group-title { display: flex; align-items: center; gap: 8px; padding: 0 4px 6px; font-size: 10.5px; font-weight: 700;
+/* Group headings read as labels, not tabs: tiny bold caps. */
+.nav-group-title { padding: 0 4px 6px; font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.12em; text-transform: uppercase; color: var(--n500); cursor: default; user-select: none; }
-.nav-group-title::after { content: ''; flex: 1; height: 1px; background: var(--wash-8); }
 /* Tabs sit indented on a faint guide line so they visibly belong to their heading. */
 .nav-group > .nav-item { margin-left: 6px; width: calc(100% - 6px); position: relative; }
 .nav-group > .nav-item::before { content: ''; position: absolute; left: -6px; top: 4px; bottom: 4px; width: 2px; border-radius: 1px; background: var(--wash-6); }
