@@ -192,13 +192,14 @@ export function createApp(opts: HubOptions) {
   });
 
   app.get('/api/hq', async (_req, res) => {
-    const [brief, runs, calendar, findings, actions] = await Promise.allSettled([
+    const [brief, runs, calendar, findings, actions, dailyPick] = await Promise.allSettled([
       opts.agents.latestBrief(), opts.agents.recentRuns(5), opts.agents.calendar(), opts.agents.findings(), opts.agents.actions(),
+      opts.agents.dailyPick?.() ?? Promise.resolve(null),
     ]);
     const agentsError = brief.status === 'rejected' || runs.status === 'rejected';
     if (agentsError) console.error('[hub] agent API unreachable', brief.status === 'rejected' ? brief.reason : runs);
-    res.json(
-      hqData({
+    res.json({
+      ...hqData({
         email: res.locals.email,
         brief: brief.status === 'fulfilled' ? brief.value : null,
         runs: runs.status === 'fulfilled' ? runs.value : [],
@@ -209,7 +210,8 @@ export function createApp(opts: HubOptions) {
         actions: actions.status === 'fulfilled' ? actions.value : undefined,
         actionsError: actions.status === 'rejected',
       }),
-    );
+      dailyPick: dailyPick.status === 'fulfilled' ? dailyPick.value : null,
+    });
   });
 
   const BACKLOG_NEW = ['title', 'notes', 'status', 'priority', 'steps'] as const;

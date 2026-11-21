@@ -143,6 +143,7 @@ export interface ChatStatus {
 }
 
 export interface Checkin { id: number; mood: number; energy: number | null; note: string; created_at: string; updated_at: string }
+export interface DailyPick { items: { kind: string; text: string; sub: string }[]; created_at: string }
 export type CheckinWrite = Partial<Pick<Checkin, 'mood' | 'energy' | 'note'>>;
 
 export interface AgentsClient {
@@ -152,6 +153,7 @@ export interface AgentsClient {
   backlog?(): Promise<{ items: BacklogItem[] }>;
   saveBacklog?(item: BacklogWrite, id?: number): Promise<{ item: BacklogItem }>;
   checkins?(): Promise<{ items: Checkin[] }>;
+  dailyPick?(): Promise<DailyPick | null>;
   saveCheckin?(item: CheckinWrite, id?: number): Promise<{ item: Checkin }>;
   settings?(): Promise<BriefSettings>;
   saveSettings?(settings: BriefSettingsInput): Promise<BriefSettings>;
@@ -193,6 +195,7 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
     backlog: () => call('GET', '/backlog'),
     saveBacklog: (item, id) => call(id ? 'PATCH' : 'POST', id ? `/backlog/${id}` : '/backlog', item),
     checkins: () => call('GET', '/checkins'),
+    dailyPick: async () => (await call<{ pick: DailyPick | null }>('GET', '/daily-pick')).pick,
     saveCheckin: (item, id) => call(id ? 'PATCH' : 'POST', id ? `/checkins/${id}` : '/checkins', item),
     settings: () => call('GET', '/settings'),
     saveSettings: (settings) => call('PUT', '/settings', settings),

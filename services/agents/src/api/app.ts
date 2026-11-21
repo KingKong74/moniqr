@@ -9,7 +9,17 @@ import {
   NotFoundError,
   queueRun,
   writeBrief,
+  latestDailyPick,
+  DAILY_PICK_KINDS,
 } from '../runs.js';
+
+/** One of each kind, in any order; the hub shows them as a rotating card. */
+const dailyPickSchema = z.array(z.object({
+  kind: z.enum(DAILY_PICK_KINDS),
+  text: z.string().trim().min(1).max(400),
+  sub: z.string().trim().max(160).default(''),
+}).strict()).max(DAILY_PICK_KINDS.length)
+  .refine((items) => new Set(items.map((i) => i.kind)).size === items.length, 'Give each kind of daily pick at most once.');
 import { nextFireAfter } from '../scheduler.js';
 import { bearer, safeEqual } from '../tokens.js';
 import { findingInput, scanInput, listFindings, saveFinding, saveScan } from '../findings.js';
@@ -242,6 +252,8 @@ export function createApp(opts: AppOptions) {
     res.json({ briefs: rows });
   });
 
+  app.get('/daily-pick', hub, async (_req, res) => { res.json({ pick: await latestDailyPick(pool) }); });
+
   app.get('/briefs/latest', hub, async (_req, res) => {
     const { rows } = await pool.query(
       `SELECT id, run_id, kind, body_md, summary, delivered, created_at
@@ -355,6 +367,7 @@ export function createApp(opts: AppOptions) {
       .object({
         body_md: z.string().trim().min(1).max(20_000),
         summary: z.string().trim().min(1).max(300),
+        daily_pick: dailyPickSchema.optional(),
       })
       .parse(req.body);
     const brief = await writeBrief(pool, id, body);

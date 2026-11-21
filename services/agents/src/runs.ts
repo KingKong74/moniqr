@@ -169,10 +169,20 @@ export interface Brief {
   created_at: Date;
 }
 
+export const DAILY_PICK_KINDS = ['Quote', 'Small challenge', 'Word of the day', 'Question to sit with', 'Did you know'] as const;
+export interface DailyPick { kind: (typeof DAILY_PICK_KINDS)[number]; text: string; sub: string }
+
+/** The newest daily pick a brief saved, with when it was written. */
+export async function latestDailyPick(pool: Pool): Promise<{ items: DailyPick[]; created_at: Date } | null> {
+  const { rows } = await pool.query(`SELECT daily_pick AS items, created_at FROM briefs
+    WHERE daily_pick IS NOT NULL ORDER BY created_at DESC, id DESC LIMIT 1`);
+  return rows[0] ?? null;
+}
+
 export async function writeBrief(
   pool: Pool,
   runId: number,
-  brief: { body_md: string; summary: string },
+  brief: { body_md: string; summary: string; daily_pick?: DailyPick[] },
 ): Promise<Brief> {
   return withTransaction(pool, async (client) => {
     const run = await client.query<{ kind: string }>(
@@ -184,9 +194,9 @@ export async function writeBrief(
     const existing = await client.query('SELECT 1 FROM briefs WHERE run_id = $1', [runId]);
     if (existing.rowCount) throw new ConflictError('This run has already written its brief');
     const { rows } = await client.query<Brief>(
-      `INSERT INTO briefs (run_id, kind, body_md, summary) VALUES ($1, $2, $3, $4)
+      `INSERT INTO briefs (run_id, kind, body_md, summary, daily_pick) VALUES ($1, $2, $3, $4, $5)
        RETURNING id, run_id, kind, body_md, summary, delivered, created_at`,
-      [runId, kind, brief.body_md, brief.summary],
+      [runId, kind, brief.body_md, brief.summary, brief.daily_pick?.length ? JSON.stringify(brief.daily_pick) : null],
     );
     return rows[0]!;
   });

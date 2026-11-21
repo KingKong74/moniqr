@@ -63,7 +63,8 @@ const SOURCES = {
   pri: { kind: 'sample', from: 'Priorities are not wired to the backlog yet' },
   news: { kind: 'sample', from: 'No news feed is connected' },
   mood: { kind: 'live', from: 'your check-ins, saved in moniqr' },
-  pick: { kind: 'sample', from: 'Daily picks are placeholder content' },
+  pick: { kind: 'live', from: 'the daily pick written with your morning brief' },
+  pickSample: { kind: 'sample', from: 'No morning brief has written a daily pick yet' },
   glance: { kind: 'sample', from: 'No health or fitness data is connected' },
   habits: { kind: 'sample', from: 'Habit ticks are not saved anywhere yet' },
   meals: { kind: 'sample', from: 'No meal plan is connected' },
@@ -77,7 +78,7 @@ const SOURCES = {
   briefFallback: { kind: 'sample', from: 'Shown until the EA writes its first brief' },
 };
 const LIVE_COUNT = Object.values(SOURCES).filter((x) => x.kind === 'live').length;
-const SAMPLE_COUNT = Object.keys(SOURCES).length - LIVE_COUNT;
+const SAMPLE_COUNT = Object.keys(SOURCES).filter((k) => k !== 'pickSample').length - LIVE_COUNT;
 
 /** The Live or Sample badge for a card. `down` replaces "Live" when the live source is failing. */
 function src(id, down, extra = '') {
@@ -1242,7 +1243,9 @@ class App extends Component {
   }
 
   renderPick(v, L) {
-    const { picks } = v.mock;
+    // The morning brief writes a fresh set each day; until one has, the card shows samples.
+    const live = this.state.data?.dailyPick?.items?.length ? this.state.data.dailyPick : null;
+    const picks = live ? live.items : v.mock.picks;
     const idx = (this.dayOfYear(v) + this.state.pickN) % picks.length;
     const pk = picks[idx];
     if (L.mini) {
@@ -1253,7 +1256,7 @@ class App extends Component {
     }
     return html`
       <div class="between" style="align-items: center;">
-        <span class="fs12 steel">${pk.kind} ${src('pick')}</span>
+        <span class="fs12 steel">${pk.kind} ${src(live ? 'pick' : 'pickSample')}</span>
         <span
           class="fs12 dim"
           style="cursor: pointer;"
@@ -1280,11 +1283,7 @@ class App extends Component {
             >`,
           )}
         </div>
-        <div class="row wrap" style="gap: 6px;">
-          <span class="chip" onClick=${() => this.setState((s) => ({ saved: { ...s.saved, [idx]: true } }))}>
-            ${this.state.saved[idx] ? '✓ Saved to Knowledge' : 'Save to Knowledge'}
-          </span>
-        </div>
+        ${live && html`<span class="fs12 muted">From your ${new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'long' }).format(new Date(live.created_at))} morning brief</span>`}
       `}
     `;
   }

@@ -79,16 +79,21 @@ if (!chatRun) server.registerTool(
     inputSchema: {
       body_md: z.string().min(1).max(20_000).describe('The full brief, in Markdown'),
       summary: z.string().min(1).max(300).describe('Up to three short lines for a push notification'),
+      daily_pick: z.array(z.object({
+        kind: z.enum(['Quote', 'Small challenge', 'Word of the day', 'Question to sit with', 'Did you know']),
+        text: z.string().min(1).max(400),
+        sub: z.string().max(160).describe('Quote author, or a short line of context'),
+      })).max(5).optional().describe('Morning brief only: one of each kind for the dashboard card'),
     },
   },
-  async ({ body_md, summary }) => {
+  async ({ body_md, summary, daily_pick }) => {
     // Finalise observed mail coverage before saving the brief; errors must not look like an empty inbox.
     if (google && (observations.searches || observations.messagesRead || observations.failures)) {
       try { await saveScan(true); }
       catch (err) { return { isError: true, content: [{ type: 'text', text: String(err) }] }; }
     }
     const email = google ? observations.scan(true) : null;
-    const res = await post(`/runs/${runId}/brief`, { body_md: withFooter(body_md, sourcesFooter(ledger, Boolean(google), email)), summary });
+    const res = await post(`/runs/${runId}/brief`, { body_md: withFooter(body_md, sourcesFooter(ledger, Boolean(google), email)), summary, ...(daily_pick?.length ? { daily_pick } : {}) });
     if (!res.ok) {
       return {
         isError: true,

@@ -1,3 +1,4 @@
+import { adminContext } from '../src/brief-context.js';
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import type { Pool } from '../src/db.js';
@@ -85,6 +86,25 @@ describe('agent API', { skip: skipReason }, () => {
     assert.equal(latest.body.brief.run_id, claimed.run.id);
     assert.equal(latest.body.brief.kind, 'test');
     assert.equal(latest.body.brief.summary, 'All good.');
+  });
+
+  test('a brief can carry the daily pick, which the hub reads back', async () => {
+    assert.equal((await api.call('GET', '/daily-pick', RUNNER_TOKEN)).status, 401);
+    const claimed = await queueAndClaim();
+    const runPath = `/runs/${claimed.run.id}/brief`;
+    const pick = [
+      { kind: 'Quote', text: 'Well begun is half done.', sub: 'Aristotle' },
+      { kind: 'Word of the day', text: 'Sonder: a feeling', sub: '' },
+    ];
+    const bad = (daily_pick: unknown) => api.call('POST', runPath, claimed.runToken, { body_md: 'x', summary: 'x', daily_pick });
+    assert.equal((await bad([{ kind: 'Horoscope', text: 'No', sub: '' }])).status, 400);
+    assert.equal((await bad([pick[0], pick[0]])).status, 400, 'one of each kind');
+    assert.equal((await bad(pick)).status, 201);
+    const got = await api.call('GET', '/daily-pick', API_TOKEN);
+    assert.deepEqual(got.body.pick.items, pick);
+    const context = await adminContext(pool);
+    assert.equal(context.recent_daily_picks.items[0].text, 'Well begun is half done.');
+    await api.call('POST', `/runner/runs/${claimed.run.id}/finish`, RUNNER_TOKEN, { status: 'done' });
   });
 
   test('a run that ends "done" without a brief is recorded as failed', async () => {

@@ -89,9 +89,15 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
     'messages were sent, bills paid or bookings made. If a tool fails, say which source was unavailable rather than leaving it out. ' +
     'Read personal_backlog in get_daily_admin. Suggest at most three useful next steps when relevant, without treating ideas as commitments or executing them. ' +
     'moniqr adds its own sources section to the brief.';
+  const dailyPick = ' Also pass daily_pick to write_brief with one of each kind, fresh each day and not repeated from recent days: ' +
+    'Quote (a real, well-known quote; sub is its author, and if you are not sure of the attribution choose another), ' +
+    'Small challenge (one small, doable thing for today that fits his calendar; sub says when it fits), ' +
+    'Word of the day (a real, useful English word, as "Word: meaning"; sub is a short example sentence), ' +
+    'Question to sit with (one reflective question; sub is a short nudge), ' +
+    'Did you know (a well-established fact, no shaky figures; sub links it to his day if natural). Keep each text under 200 characters, en-AU spelling.';
   switch (claimed.run.kind) {
     case 'morning_brief':
-      if (!sources.google) return `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ${noData}${approvals}`;
+      if (!sources.google) return `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ${noData}${approvals}${dailyPick}`;
       return (
         `${when}\n\nWrite Bailey's morning brief and save it with write_brief. ` +
         `Call get_events with from ${today} and days 2 to see today and tomorrow. ` +
@@ -99,7 +105,7 @@ export function buildPrompt(claimed: ClaimedRun, now = new Date(), sources: Sour
         "tight gaps between commitments in different places, and anything early tomorrow he should prepare for tonight. " +
         'If today is empty, say so in one line. ' +
         'Then search his email as your instructions describe, and cover bills due in the next 7 days and anything ' +
-        `that needs a reply or decision. If nothing turns up, say so in one line. ${notYet}${findings}${approvals}`
+        `that needs a reply or decision. If nothing turns up, say so in one line. ${notYet}${findings}${approvals}${dailyPick}`
       );
     case 'afternoon_brief':
       return `${when}\n\nWrite Bailey's afternoon brief and save it with write_brief. ` +
