@@ -41,13 +41,6 @@ export const knowledgeSamples = {
   ],
 };
 
-export const agentSamples = [
-  { name: 'Executive Assistant', role: 'Email, calendar and the daily brief', status: 'Planned here', runs: '2 a day', note: 'The real EA runs today; this card is a preview of the agent page.' },
-  { name: 'Study Coach', role: 'Plans CA study blocks and spaced review', status: 'Idea', runs: 'Weekly', note: 'Would read Knowledge and propose study sessions for approval.' },
-  { name: 'Finance Clerk', role: 'Categorises transactions and flags bills', status: 'Idea', runs: 'Daily', note: 'Would read Finance and raise proposals, never pay anything.' },
-  { name: 'Health Planner', role: 'Training and meal plans around your week', status: 'Idea', runs: 'Weekly', note: 'Would need a health data connection first.' },
-];
-
 export const lifeSamples = {
   goals: [
     { name: 'Pass CA exam module', progress: 60, note: '6 of 10 topics covered · exam in March' },

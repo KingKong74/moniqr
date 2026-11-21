@@ -7,9 +7,10 @@
 // SOURCES below records which cards are live and which are samples; every card shows a badge.
 import { Component, html, render } from '/vendor/preact-htm.js';
 import { calendarLayers, calendarDayLayout } from './calendar-overlay.js';
-import { projectSamples, financeSamples, knowledgeSamples, agentSamples, lifeSamples } from './dashboard-mocks.js';
+import { projectSamples, financeSamples, knowledgeSamples, lifeSamples } from './dashboard-mocks.js';
 import { Home } from './home.js';
 import { Backlog } from './backlog.js';
+import { Workforce } from './workforce.js';
 import { renderBriefing, loadBriefExtras } from './briefing.js';
 import { mountConsole } from './console.js';
 
@@ -71,7 +72,6 @@ const SOURCES = {
   inbox: { kind: 'live', from: 'email findings from the inbox scan' },
   runs: { kind: 'live', from: 'the agent service run history' },
   moniqr: { kind: 'live', from: 'the latest EA run' },
-  agents: { kind: 'sample', from: 'Only the EA exists so far; the other agents are placeholders' },
   pri: { kind: 'sample', from: 'Priorities are not wired to the backlog yet' },
   news: { kind: 'sample', from: 'No news feed is connected' },
   mood: { kind: 'live', from: 'your check-ins, saved in moniqr' },
@@ -85,7 +85,6 @@ const SOURCES = {
   projects: { kind: 'sample', from: 'Not connected to Stack yet' },
   finance: { kind: 'sample', from: 'Not connected to Finance yet' },
   knowledge: { kind: 'sample', from: 'No notes or documents are connected yet' },
-  agentsPage: { kind: 'sample', from: 'Agent pages are a preview; only the EA runs today' },
   life: { kind: 'sample', from: 'No goals, health or journal data is connected yet' },
   briefFallback: { kind: 'sample', from: 'Shown until the EA writes its first brief' },
 };
@@ -618,7 +617,12 @@ class App extends Component {
                 ? { kind: 'idle', state: 'last run failed' }
                 : { kind: 'run', state: 'active' }),
       },
-      ...(this.state.hideSamples ? [] : mock.workforce.map((w) => ({ ...w, sample: true }))),
+      ...(data.workforce ?? []).map((a) => ({
+        name: a.name,
+        ...(!a.enabled ? { kind: 'idle', state: 'paused' }
+          : a.active ? { kind: a.last === 'running' ? 'run' : 'wait', state: a.last === 'running' ? 'working' : 'queued' }
+            : a.last === 'failed' ? { kind: 'idle', state: 'task failed' } : { kind: 'idle', state: 'ready' }),
+      })),
     ];
     const hour = now.getUTCHours() + now.getUTCMinutes() / 60;
     return { mock, now, todayIdx, week, hour, pending, unread, workforce };
@@ -658,12 +662,12 @@ class App extends Component {
           )}
         </div>
         <div class="col workforce" style="gap: 8px; padding: 0 10px;">
-          <span class="fs12 muted">Workforce</span>
+          <button class="fs12 muted wf-side-link" onClick=${() => this.openView('agents')}>Workforce${this.state.data.pendingAgentChanges ? html` <span class="badge">${this.state.data.pendingAgentChanges}</span>` : ''}</button>
           ${v.workforce.map(
             (w) => html`<div class="row">
               <span class="dot" style=${`border: 1px solid ${dot[w.kind][1]}; background: ${dot[w.kind][0]};`}></span>
               <span class="fs13 soft grow">${w.name}</span>
-              ${w.sample ? src('agents', null, 'flush') : html`<span class="fs12 muted">${w.state}</span>`}
+              <span class="fs12 muted">${w.state}</span>
             </div>`,
           )}
         </div>
@@ -1816,18 +1820,7 @@ class App extends Component {
   }
 
   renderAgentsPage() {
-    return html`<main class="main dashboard">
-      ${this.sampleHeader('Agents', 'The agents that work for you, what each one may do and when it runs.', 'agentsPage')}
-      <div class="dashboard-metrics">
-        ${this.dashboardMetric('Agents', String(agentSamples.length), '1 running · 3 ideas')}
-        ${this.dashboardMetric('Runs this week', '14', 'Morning and afternoon briefs')}
-        ${this.dashboardMetric('Waiting on you', '2', 'Proposals in the Inbox')}
-        ${this.dashboardMetric('Outward actions', 'None', 'Everything needs your approval')}
-      </div>
-      <div class="dashboard-projects">${agentSamples.map((a) => html`<article class="tile panel"><div class="between"><span class="fs12 muted">${a.runs}</span><span class="dashboard-status steel">${a.status}</span></div><h3>${a.name}</h3><p class="fs13 soft">${a.role}</p><p class="fs13 muted">${a.note}</p></article>`)}</div>
-      <section class="tile panel"><div class="col" style="gap: 6px;"><h2 class="card-title">The real EA</h2><p class="muted">The live EA's schedule, run status and Run now are on Settings; its brief is on the Dashboard.</p></div>
-        <div class="row wrap"><button class="btn btn-secondary" onClick=${() => this.openView('settings')}>Open Settings</button><button class="btn btn-ghost" onClick=${() => this.openView('briefing')}>Latest brief</button></div></section>
-    </main>`;
+    return html`<${Workforce} />`;
   }
 
   renderLife() {

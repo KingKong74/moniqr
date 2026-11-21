@@ -25,14 +25,6 @@ export const MOCK = {
   name: 'Bailey',
   upNext: { title: 'Gym · Upper body', note: '09:00 · Anytime Fitness' },
 
-  workforce: [
-    { name: 'Health Coach', kind: 'run', state: 'meal plan' },
-    { name: 'Concierge', kind: 'wait', state: 'waiting' },
-    { name: 'Research Analyst', kind: 'run', state: '1 task' },
-    { name: 'Engineering', kind: 'run', state: '3 tasks' },
-    { name: 'Reviewer', kind: 'idle', state: 'queued' },
-  ],
-
   slides: [
     {
       kicker: 'For Sam · birthday Thursday',

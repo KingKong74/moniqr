@@ -2,7 +2,7 @@ import type { Pool } from './db.js';
 import { withTransaction } from './db.js';
 import { hashToken, newToken, safeEqual } from './tokens.js';
 
-export type Trigger = 'schedule' | 'manual' | 'inbox';
+export type Trigger = 'schedule' | 'manual' | 'inbox' | 'delegated';
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed';
 
 export interface Run {
@@ -30,7 +30,11 @@ export interface AgentRow {
   slug: string;
   name: string;
   role: string;
-  instructions_path: string;
+  /** The EA's instructions live in the repo; a worker's live in the database. */
+  instructions_path: string | null;
+  instructions_md: string | null;
+  /** A worker's ticked read-only tools. Empty for the EA, whose tools are fixed in code. */
+  tools: string[];
 }
 
 export interface ClaimedRun {
@@ -96,7 +100,7 @@ export async function claimNextRun(pool: Pool, staleAfterMs: number): Promise<Cl
     );
     const run = updated.rows[0]!;
     const agent = await client.query<AgentRow>(
-      'SELECT id, slug, name, role, instructions_path FROM agents WHERE id = $1',
+      'SELECT id, slug, name, role, instructions_path, instructions_md, tools FROM agents WHERE id = $1',
       [run.agent_id],
     );
     return { run, agent: agent.rows[0]!, runToken };
@@ -107,14 +111,23 @@ export async function claimNextRun(pool: Pool, staleAfterMs: number): Promise<Cl
  * True when `token` is the live token for a running run. With `write`, a chat run is refused:
  * the console is read-only, whatever tools its Codex process was given.
  */
-export async function checkRunToken(pool: Pool, runId: number, token: string, opts: { write?: boolean } = {}): Promise<boolean> {
-  const { rows } = await pool.query<{ run_token_hash: string | null; kind: string }>(
-    `SELECT run_token_hash, kind FROM runs WHERE id = $1 AND status = 'running'`,
+export async function checkRunToken(
+  pool: Pool, runId: number, token: string,
+  opts: { write?: boolean; worker?: boolean; tool?: string } = {},
+): Promise<boolean> {
+  const { rows } = await pool.query<{ run_token_hash: string | null; kind: string; role: string; tools: string[] }>(
+    `SELECT r.run_token_hash, r.kind, a.role, a.tools FROM runs r JOIN agents a ON a.id = r.agent_id
+     WHERE r.id = $1 AND r.status = 'running'`,
     [runId],
   );
-  const stored = rows[0]?.run_token_hash;
-  if (opts.write && rows[0]?.kind === 'chat') return false;
-  return Boolean(stored && safeEqual(stored, hashToken(token)));
+  const row = rows[0];
+  if (!row?.run_token_hash || !safeEqual(row.run_token_hash, hashToken(token))) return false;
+  // A worker's token only reaches its own report and the reads ticked for it, never the EA's writes.
+  const worker = row.role === 'worker';
+  if (opts.worker) return worker && row.kind === 'task';
+  if (worker) return !opts.write && opts.tool !== undefined && row.tools.includes(opts.tool);
+  if (opts.write && row.kind === 'chat') return false;
+  return true;
 }
 
 export async function finishRun(
@@ -140,6 +153,13 @@ export async function finishRun(
       if (typeof reply !== 'string' || !reply.trim()) {
         finalStatus = 'failed';
         error = 'Chat ended without a reply';
+      }
+    } else if (finalStatus === 'done' && kind === 'task') {
+      // A worker's task is done only once it has filed its report.
+      const reports = await client.query('SELECT 1 FROM reports WHERE run_id = $1', [runId]);
+      if (reports.rowCount === 0) {
+        finalStatus = 'failed';
+        error = 'Task ended without filing a report';
       }
     } else if (finalStatus === 'done') {
       const briefs = await client.query('SELECT 1 FROM briefs WHERE run_id = $1', [runId]);

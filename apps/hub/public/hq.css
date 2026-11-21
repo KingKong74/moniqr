@@ -950,3 +950,32 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
   .bf-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 22vw, 460px); gap: 40px; align-items: start; }
   .bf-rail { grid-template-columns: minmax(0, 1fr); position: sticky; top: 20px; max-height: calc(100dvh - 40px); overflow-y: auto; scrollbar-width: none; }
 }
+
+/* The Agents page: Bailey's workforce. */
+.wf-card { text-align: left; font: inherit; color: inherit; border: 0; cursor: pointer; }
+.wf-card:hover, .wf-card.is-open { box-shadow: 0 0 0 1px var(--a300); }
+.wf-card:focus-visible { outline: 2px solid var(--a300); outline-offset: 2px; }
+.wf-ea { cursor: default; }
+.wf-ea:hover { box-shadow: 0 0 0 1px var(--tile-line); }
+.wf-tools { gap: 6px; }
+.wf-tool { font-size: 11px; padding: 2px 8px; border-radius: 8px; background: var(--wash-6); color: var(--n300); }
+.wf-editor-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.wf-instructions { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5; }
+.wf-toolset { border: 1px solid var(--n600); border-radius: 10px; padding: 12px 14px; gap: 10px; margin: 0; }
+.wf-toolset legend { padding: 0 6px; font-size: 14px; }
+.wf-tool-option { align-items: flex-start; gap: 10px; font-size: 14px; }
+.wf-tool-option input, .personal-form .row > input[type=checkbox] { margin-top: 3px; }
+.wf-work { gap: 22px; }
+.wf-report summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+.wf-report .brief-md { padding-top: 10px; }
+.wf-task { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wf-change { gap: 10px; }
+.wf-diff { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; }
+.wf-diff dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.wf-was { margin-bottom: 4px; }
+.wf-pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; background: var(--wash-4); border-radius: 8px; padding: 10px 12px; margin: 6px 0 0; max-height: 320px; overflow: auto; }
+.wf-side-link { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.wf-side-link:hover { color: var(--n200); }
+.wf-side-link:focus-visible { outline: 2px solid var(--a300); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 900px) { .wf-editor-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .wf .field { font-size: 16px; } .wf-diff { grid-template-columns: minmax(0, 1fr); } }

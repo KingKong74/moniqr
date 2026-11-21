@@ -18,6 +18,7 @@ let staleAction = false;
 const calendarAdds: any[] = [];
 const personalWrites: unknown[] = [];
 const chats: unknown[] = [];
+const workforceWrites: unknown[] = [];
 let chatBusy = false;
 const agents: AgentsClient = {
   chat: async (messages) => {
@@ -31,6 +32,21 @@ const agents: AgentsClient = {
   backlog: async () => ({ items: [] }),
   saveBacklog: async (item, id) => { personalWrites.push({ item, id }); return { item: { ...item, id: id ?? 1 } }; },
   checkins: async () => ({ items: [] }),
+  workforce: async () => ({
+    agents: [{ id: 2, slug: 'researcher', name: 'Research Analyst', role: 'worker', description: '', instructions_md: 'x', tools: [], enabled: true,
+      created_at: '', updated_at: '', reports: 1, active: 1, last_run: { id: 5, status: 'running', trigger: 'manual', queued_at: '', finished_at: null, error: null } }],
+    changes: [{ id: 3 } as any], tools: {},
+  }),
+  workforceAgent: async (slug) => {
+    if (slug !== 'researcher') throw new AgentApiError(404, `No agent called "${slug}"`);
+    return { agent: { slug } as any, runs: [], reports: [{ id: 1, run_id: 5, body_md: '## Found\n\n<script>x</script>', summary: 'Found', created_at: '' }] };
+  },
+  saveWorkforceAgent: async (agent, slug) => { workforceWrites.push({ agent, slug }); return { agent: { ...agent, slug: slug ?? agent.slug } as any }; },
+  queueWorkforceTask: async (slug, task) => { workforceWrites.push({ slug, task }); return { run: { id: 9 } }; },
+  decideAgentChange: async (id, decision) => {
+    if (id === 404) throw new AgentApiError(409, 'This change was already approved');
+    workforceWrites.push({ id, decision }); return { id, status: decision, agent: null };
+  },
   saveCheckin: async (item, id) => { personalWrites.push({ item, id }); return { item: { id: id ?? 1, mood: 2, energy: null, note: '', created_at: '', updated_at: '', ...item } }; },
   settings: async () => ({ timezone: 'Australia/Brisbane', schedules: [] }),
   saveSettings: async settings => { personalWrites.push(settings); return { timezone: 'Australia/Brisbane', schedules: [] }; },
@@ -474,6 +490,38 @@ test('check-ins need a session and same-origin writes, and pass only mood, energ
   r = await post('/checkins/4', { energy: null }, { ...authed, origin: ORIGIN });
   assert.equal(r.status, 200);
   assert.deepEqual(personalWrites.at(-1), { item: { energy: null }, id: 4 });
+});
+
+test('the workforce routes need a session and same-origin writes, pass only known fields and render reports safely', async () => {
+  assert.equal((await get('/api/workforce')).status, 401);
+  assert.equal((await get('/api/workforce', authed)).status, 200);
+  const detail = await (await get('/api/workforce/agents/researcher', authed)).json();
+  assert.match(detail.reports[0].html, /<h3>Found<\/h3>/);
+  assert.ok(!detail.reports[0].html.includes('<script>'), 'report Markdown is escaped');
+  assert.equal((await get('/api/workforce/agents/nobody', authed)).status, 404);
+  assert.equal((await get('/api/workforce/agents/..%2Fbacklog', authed)).status, 400);
+
+  const post = (path: string, body: unknown, headers: Record<string, string>) => fetch(base + path, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  const ok = { ...authed, origin: ORIGIN };
+  assert.equal((await post('/workforce/agents', { slug: 'x' }, authed)).status, 403);
+  assert.equal((await post('/workforce/agents', { slug: 'x' }, { origin: ORIGIN })).status, 401);
+  let r = await post('/workforce/agents', { slug: 'bills', name: 'Bills', instructions_md: 'Find bills.', tools: ['search_email'], role: 'ea', parent_id: 1 }, ok);
+  assert.equal(r.status, 200);
+  assert.deepEqual(workforceWrites.at(-1), { agent: { slug: 'bills', name: 'Bills', instructions_md: 'Find bills.', tools: ['search_email'] }, slug: undefined });
+  r = await post('/workforce/agents/bills', { enabled: false, slug: 'renamed' }, ok);
+  assert.deepEqual(workforceWrites.at(-1), { agent: { enabled: false }, slug: 'bills' }, 'an existing agent keeps its short name');
+  r = await post('/workforce/agents/bills/tasks', { task: 'Check rates' }, ok);
+  assert.equal(r.status, 202);
+  assert.deepEqual(workforceWrites.at(-1), { slug: 'bills', task: 'Check rates' });
+  assert.equal((await post('/workforce/changes/3/decision', { decision: 'approved' }, ok)).status, 200);
+  assert.deepEqual(workforceWrites.at(-1), { id: 3, decision: 'approved' });
+  assert.equal((await post('/workforce/changes/404/decision', { decision: 'approved' }, ok)).status, 409);
+  assert.equal((await post('/workforce/changes/0/decision', { decision: 'approved' }, ok)).status, 400);
+
+  const hq = await (await get('/api/hq', authed)).json();
+  assert.deepEqual(hq.workforce, [{ slug: 'researcher', name: 'Research Analyst', enabled: true, active: 1, last: 'running' }]);
+  assert.equal(hq.pendingAgentChanges, 1);
 });
 
 test('the console posts the conversation same-site only and reads the reply back', async () => {

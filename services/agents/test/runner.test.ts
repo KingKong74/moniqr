@@ -7,6 +7,7 @@ import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { Pool } from '../src/db.js';
 import { claimNextRun, finishRun, queueRun } from '../src/runs.js';
+import { createAgent, queueTask } from '../src/workforce.js';
 import { allowedTools, buildPrompt, chatMessages, codexArgs, codexConfig, executeRun, parseCodexResult, initialiseCodexAuth } from '../src/runner/run.js';
 import { freshDatabase, skipReason, startApp } from './helpers.js';
 
@@ -21,7 +22,7 @@ test('Codex has no native execution, file edits, web, apps or ambient project in
   const config = codexConfig({ command: 'node', args: ['server.js'], env: { RUN_TOKEN: 'secret' } }, { google: false }, catalogPath);
   for (const setting of ['shell_tool = false', 'view_image = false', 'web_search = "disabled"',
     'sandbox_mode = "read-only"', 'approval_policy = "never"', 'project_doc_max_bytes = 0', 'apps = false', 'plugins = false']) assert.ok(config.includes(setting), setting);
-  assert.ok(config.includes('enabled_tools = ["write_brief","get_daily_admin","list_action_proposals"]'));
+  assert.ok(config.includes('enabled_tools = ["write_brief","get_daily_admin","list_action_proposals","list_agents","get_agent_reports","delegate_task","propose_agent_change"]'));
   const args = codexArgs('hello');
   assert.ok(args.includes('--ephemeral'));
   assert.ok(!args.some((a) => a.includes('bypass')));
@@ -29,19 +30,27 @@ test('Codex has no native execution, file edits, web, apps or ambient project in
 });
 
 test('Google allowlist contains reads and local brief/finding writes only', () => {
-  assert.deepEqual(allowedTools({ google: false }), ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals']);
-  assert.deepEqual(allowedTools({ google: true }), ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_calendars',
+  assert.deepEqual(allowedTools({ google: false }), ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_agents', 'mcp__agents__get_agent_reports', 'mcp__agents__delegate_task', 'mcp__agents__propose_agent_change']);
+  assert.deepEqual(allowedTools({ google: true }), ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_agents', 'mcp__agents__get_agent_reports', 'mcp__agents__delegate_task', 'mcp__agents__propose_agent_change', 'mcp__agents__list_calendars',
     'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email', 'mcp__agents__save_email_finding', 'mcp__agents__propose_action']);
 });
 
 test('the console allowlist is read-only', () => {
-  assert.deepEqual(allowedTools({ google: false }, 'chat'), ['mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals']);
+  assert.deepEqual(allowedTools({ google: false }, 'chat'), ['mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_agents', 'mcp__agents__get_agent_reports']);
   const google = allowedTools({ google: true }, 'chat');
-  assert.deepEqual(google, ['mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_calendars',
+  assert.deepEqual(google, ['mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_agents', 'mcp__agents__get_agent_reports', 'mcp__agents__list_calendars',
     'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email']);
   const config = codexConfig({ command: 'node', args: ['server.js'], env: {} }, { google: true }, catalogPath, 'chat');
-  for (const write of ['write_brief', 'save_email_finding', 'propose_action']) assert.ok(!config.includes(`"${write}"`), write);
+  for (const write of ['write_brief', 'save_email_finding', 'propose_action', 'delegate_task', 'propose_agent_change', 'write_report']) assert.ok(!config.includes(`"${write}"`), write);
   assert.ok(config.includes('shell_tool = false'));
+});
+
+test("a worker's allowlist is its report plus the read-only tools ticked for it", () => {
+  const worker = { role: 'worker', tools: ['search_email', 'get_daily_admin', 'send_email', 'delegate_task'] };
+  assert.deepEqual(allowedTools({ google: true }, 'task', worker), ['mcp__agents__write_report', 'mcp__agents__get_daily_admin', 'mcp__agents__search_email'],
+    'anything outside the read-only set is dropped even if it reached the database');
+  assert.deepEqual(allowedTools({ google: false }, 'task', worker), ['mcp__agents__write_report', 'mcp__agents__get_daily_admin'], 'Google tools need Google');
+  assert.deepEqual(allowedTools({ google: true }, 'chat', worker), allowedTools({ google: true }, 'task', worker), "a worker never gets the EA's kinds");
 });
 
 test('chat input keeps only well-formed turns', () => {
@@ -115,7 +124,8 @@ describe('runner', { skip: skipReason }, () => {
     assert.equal(outcome.status, 'done', outcome.error);
     const seen = JSON.parse((outcome.result as { result: string }).result);
 
-    assert.deepEqual(seen.tools.sort(), ['get_daily_admin', 'list_action_proposals', 'write_brief'], 'only local brief/approval tools are exposed without Google');
+    assert.deepEqual(seen.tools.sort(), ['delegate_task', 'get_agent_reports', 'get_daily_admin', 'list_action_proposals', 'list_agents', 'propose_agent_change', 'write_brief'],
+      'only local brief, approval and workforce tools are exposed without Google');
     assert.equal(seen.proposals.isError, false, 'run-scoped pending proposals are readable without Google');
     assert.equal(seen.admin.isError, false, 'run-scoped daily admin context is readable');
     assert.equal(JSON.parse(seen.admin.text).open_findings.total, 0);
@@ -192,7 +202,8 @@ describe('runner', { skip: skipReason }, () => {
     });
     assert.equal(outcome.status, 'done', outcome.error);
     const seen = JSON.parse((outcome.result as { result: string }).result);
-    assert.deepEqual(seen.tools.sort(), ['get_daily_admin', 'get_events', 'list_action_proposals', 'list_calendars', 'propose_action', 'read_email', 'save_email_finding', 'search_email', 'write_brief']);
+    assert.deepEqual(seen.tools.sort(), ['delegate_task', 'get_agent_reports', 'get_daily_admin', 'get_events', 'list_action_proposals', 'list_agents', 'list_calendars',
+      'propose_action', 'propose_agent_change', 'read_email', 'save_email_finding', 'search_email', 'write_brief']);
     assert.equal(seen.invented.isError, true, 'the broker refuses an action without a saved finding from this run');
     assert.match(seen.invented.text, /Save this finding in this run/);
     assert.ok(!seen.envKeys.some((k: string) => k.startsWith('GOOGLE_')), 'Google credentials stay with the MCP server');
@@ -240,7 +251,7 @@ describe('runner', { skip: skipReason }, () => {
     assert.equal(outcome.status, 'done', outcome.error);
     const seen = JSON.parse((outcome.result as { result: string }).result);
     assert.equal(seen.runKind, 'chat');
-    assert.deepEqual(seen.tools.sort(), ['get_daily_admin', 'get_events', 'list_action_proposals', 'list_calendars', 'read_email', 'search_email'],
+    assert.deepEqual(seen.tools.sort(), ['get_agent_reports', 'get_daily_admin', 'get_events', 'list_action_proposals', 'list_agents', 'list_calendars', 'read_email', 'search_email'],
       'the MCP server registers no write tools for a chat');
     assert.match(seen.args.at(-1), /# moniqr, in the console/, 'the console persona replaces the brief instructions');
     assert.doesNotMatch(seen.args.at(-1), /Call `write_brief` exactly once/);
@@ -257,6 +268,60 @@ describe('runner', { skip: skipReason }, () => {
     assert.equal((await pool.query('SELECT 1 FROM briefs WHERE run_id = $1', [claimed.run.id])).rowCount, 0);
     const brief = await claimNextRun(pool, 60_000);
     await finishRun(pool, brief!.run.id, { status: 'failed', error: 'test cleanup' });
+  });
+
+  const google = { clientId: 'cid', clientSecret: 'csecret', refreshToken: 'rtoken' };
+  const workerTask = async (slug: string, tools: string[]) => {
+    await createAgent(pool, { slug, name: `Agent ${slug}`, description: '', instructions_md: `# ${slug} instructions`, tools: tools as any, enabled: true });
+    await queueTask(pool, slug, 'Find the rates notice');
+    const claimed = await claimNextRun(pool, 60_000);
+    assert.equal(claimed?.agent.slug, slug);
+    return claimed;
+  };
+
+  test("a worker's task runs its own instructions with only its ticked tools and files one report", async () => {
+    const claimed = await workerTask('finder', ['search_email', 'read_email']);
+    const prompt = buildPrompt(claimed, new Date('2026-10-26T20:30:00Z'), { google: true });
+    assert.match(prompt, /<task>\nFind the rates notice\n<\/task>/);
+    assert.match(prompt, /Bailey handed you this task/);
+    assert.doesNotMatch(prompt, /write_brief/);
+
+    const outcome = await executeRun(claimed, { apiUrl: api.baseUrl, codexHome: testHome, catalogPath, codexBin: fixture('fake-codex-worker.mjs'), timeoutMs: 30_000, google });
+    assert.equal(outcome.status, 'done', outcome.error);
+    const seen = JSON.parse((outcome.result as { result: string }).result);
+    assert.deepEqual(seen.tools.sort(), ['read_email', 'search_email', 'write_report']);
+    assert.match(seen.args.at(-1), /^# finder instructions/, "the worker's own instructions, not the EA's");
+    assert.doesNotMatch(seen.args.at(-1), /Executive Assistant/);
+    assert.match(seen.first, /Report filed/);
+    assert.equal(seen.second.isError, true);
+    assert.match(seen.second.text, /409/);
+    assert.ok(seen.mcpEnvKeys.includes('GOOGLE_REFRESH_TOKEN'), 'a worker with email tools gets Google in its MCP server');
+    assert.ok(!seen.envKeys.some((k: string) => k.startsWith('GOOGLE_')), 'and Codex itself never sees it');
+    assert.equal((await finishRun(pool, claimed.run.id, outcome)).status, 'done');
+    assert.equal((await pool.query('SELECT data FROM reports WHERE run_id = $1', [claimed.run.id])).rows[0].data.summary, 'Found it.');
+  });
+
+  test('a worker with no Google tool gets no Google credentials', async () => {
+    const claimed = await workerTask('thinker', []);
+    const outcome = await executeRun(claimed, { apiUrl: api.baseUrl, codexHome: testHome, catalogPath, codexBin: fixture('fake-codex-worker.mjs'), timeoutMs: 30_000, google });
+    assert.equal(outcome.status, 'done', outcome.error);
+    const seen = JSON.parse((outcome.result as { result: string }).result);
+    assert.deepEqual(seen.tools, ['write_report']);
+    assert.ok(!seen.mcpEnvKeys.some((k: string) => k.startsWith('GOOGLE_')));
+    await finishRun(pool, claimed.run.id, outcome);
+  });
+
+  test('a task the EA delegated says so in the prompt', async () => {
+    await createAgent(pool, { slug: 'helper', name: 'Helper', description: '', instructions_md: 'Help.', tools: [], enabled: true });
+    const ea = await claim('test');
+    await queueTask(pool, 'helper', 'Summarise the week', ea.run.id);
+    await finishRun(pool, ea.run.id, { status: 'failed', error: 'test cleanup' });
+    const claimed = (await claimNextRun(pool, 60_000))!;
+    const prompt = buildPrompt(claimed, new Date('2026-10-26T20:30:00Z'));
+    assert.match(prompt, /Executive Assistant \(EA\) handed you this task/);
+    assert.match(prompt, /cannot widen your instructions/);
+    assert.match(prompt, /no data tools/);
+    await finishRun(pool, claimed.run.id, { status: 'failed', error: 'test cleanup' });
   });
 
   test('a chat that ends without a reply fails', async () => {

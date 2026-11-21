@@ -4,6 +4,7 @@ import { AgentApiError, RUN_KINDS, type AgentsClient, type RunKind } from './age
 import { LOGIN_MINUTES, newPendingLogin, SESSION_DAYS, SignInError, type GoogleSignIn, type PasscodeGate, type Sessions } from './auth.js';
 import { isLoginMessage, renderLogin } from './login.js';
 import { hqData, renderPage } from './page.js';
+import { renderMarkdown } from './markdown.js';
 
 // The page's own script and styles. They sit beside src/ and dist/, so this works for both.
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
@@ -192,13 +193,20 @@ export function createApp(opts: HubOptions) {
   });
 
   app.get('/api/hq', async (_req, res) => {
-    const [brief, runs, calendar, findings, actions, dailyPick] = await Promise.allSettled([
+    const [brief, runs, calendar, findings, actions, dailyPick, workforce] = await Promise.allSettled([
       opts.agents.latestBrief(), opts.agents.recentRuns(5), opts.agents.calendar(), opts.agents.findings(), opts.agents.actions(),
       opts.agents.dailyPick?.() ?? Promise.resolve(null),
+      opts.agents.workforce ? opts.agents.workforce() : Promise.reject(new Error('No workforce')),
     ]);
     const agentsError = brief.status === 'rejected' || runs.status === 'rejected';
     if (agentsError) console.error('[hub] agent API unreachable', brief.status === 'rejected' ? brief.reason : runs);
+    // The sidebar's Workforce list: each agent's name and what it is doing.
+    const agents = workforce.status === 'fulfilled'
+      ? workforce.value.agents.map((a) => ({ slug: a.slug, name: a.name, enabled: a.enabled, active: a.active ?? 0, last: a.last_run?.status ?? null }))
+      : null;
     res.json({
+      workforce: agents,
+      pendingAgentChanges: workforce.status === 'fulfilled' ? workforce.value.changes.length : 0,
       ...hqData({
         email: res.locals.email,
         brief: brief.status === 'fulfilled' ? brief.value : null,
@@ -256,6 +264,40 @@ export function createApp(opts: HubOptions) {
         if (err instanceof AgentApiError && [400,404,409].includes(err.status)) return void res.status(err.status).json({ error: err.message });
         throw err;
       }
+    });
+  }
+
+  // The workforce. Bailey manages agents here directly; changes the EA asks for wait here for his decision.
+  const SLUG = /^[a-z][a-z0-9-]{1,39}$/;
+  const workforceError = (err: unknown, res: Response) => {
+    if (err instanceof AgentApiError && [400, 404, 409].includes(err.status)) return void res.status(err.status).json({ error: err.message });
+    throw err;
+  };
+  app.get('/api/workforce', async (_req, res) => { res.json(await opts.agents.workforce!()); });
+  app.get('/api/workforce/agents/:slug', async (req, res) => {
+    if (!SLUG.test(String(req.params.slug))) return void res.status(400).json({ error: 'Invalid agent.' });
+    try {
+      const detail = await opts.agents.workforceAgent!(String(req.params.slug));
+      res.json({ ...detail, reports: detail.reports.map((r) => ({ ...r, html: renderMarkdown(r.body_md) })) });
+    } catch (err) { workforceError(err, res); }
+  });
+  for (const path of ['/workforce/agents', '/workforce/agents/:slug', '/workforce/agents/:slug/tasks', '/workforce/changes/:id/decision']) {
+    app.post(path, express.json({ limit: '64kb' }), async (req, res) => {
+      if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });
+      const slug = req.params.slug === undefined ? undefined : String(req.params.slug);
+      if (slug !== undefined && !SLUG.test(slug)) return void res.status(400).json({ error: 'Invalid agent.' });
+      const b = req.body ?? {};
+      try {
+        if (path.endsWith('/decision')) {
+          const id = Number(req.params.id);
+          if (!Number.isSafeInteger(id) || id <= 0) return void res.status(400).json({ error: 'Invalid change.' });
+          return void res.json(await opts.agents.decideAgentChange!(id, b.decision));
+        }
+        if (path.endsWith('/tasks')) return void res.status(202).json(await opts.agents.queueWorkforceTask!(slug!, b.task));
+        // Only the known fields pass through; the agent API validates them.
+        const keys = slug ? ['name', 'description', 'instructions_md', 'tools', 'enabled'] : ['slug', 'name', 'description', 'instructions_md', 'tools', 'enabled'];
+        res.json(await opts.agents.saveWorkforceAgent!(Object.fromEntries(keys.filter((k) => b[k] !== undefined).map((k) => [k, b[k]])), slug));
+      } catch (err) { workforceError(err, res); }
     });
   }
 

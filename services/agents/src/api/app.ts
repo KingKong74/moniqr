@@ -29,6 +29,7 @@ import { executeCalendarAction } from '../calendar-executor.js';
 import { backlogInput, backlogPatch, createBacklogItem, updateBacklogItem, briefSettingsInput, listBacklog, briefSettings, saveBriefSettings,
   checkinInput, checkinPatch, listCheckins, createCheckin, updateCheckin } from '../personal.js';
 import { adminContext } from '../brief-context.js';
+import { workforceRoutes } from './workforce.js';
 
 function isValidCron(cron: string): boolean {
   try {
@@ -321,14 +322,14 @@ export function createApp(opts: AppOptions) {
   app.get('/runs/:id/actions', async (req, res) => {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
-    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    if (!token || !(await checkRunToken(pool, id, token, { tool: 'list_action_proposals' }))) return void res.status(401).json({ error: 'Unauthorised' });
     res.json(await listActions(pool, true, opts.actionCalendarId, !!opts.calendarWriter));
   });
 
   app.get('/runs/:id/admin-context', async (req, res) => {
     const id = idParam.parse(req.params.id);
     const token = bearer(req.header('authorization'));
-    if (!token || !(await checkRunToken(pool, id, token))) return void res.status(401).json({ error: 'Unauthorised' });
+    if (!token || !(await checkRunToken(pool, id, token, { tool: 'get_daily_admin' }))) return void res.status(401).json({ error: 'Unauthorised' });
     res.json(await adminContext(pool, { actionCalendarId: opts.actionCalendarId, calendarWriteReady: !!opts.calendarWriter }));
   });
 
@@ -373,6 +374,8 @@ export function createApp(opts: AppOptions) {
     const brief = await writeBrief(pool, id, body);
     res.status(201).json({ brief });
   });
+
+  workforceRoutes(app, pool, hub);
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof z.ZodError) {

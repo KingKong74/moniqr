@@ -146,7 +146,33 @@ export interface Checkin { id: number; mood: number; energy: number | null; note
 export interface DailyPick { items: { kind: string; text: string; sub: string }[]; created_at: string }
 export type CheckinWrite = Partial<Pick<Checkin, 'mood' | 'energy' | 'note'>>;
 
+/** The workforce: agents Bailey manages that work for the EA. */
+export interface WorkerTool { label: string; detail: string; google?: boolean }
+export interface WorkforceAgent {
+  id: number; slug: string; name: string; role: 'worker'; description: string; instructions_md: string;
+  tools: string[]; enabled: boolean; created_at: string; updated_at: string;
+  reports?: number; active?: number;
+  last_run?: { id: number; status: RunSummary['status']; trigger: string; queued_at: string; finished_at: string | null; error: string | null } | null;
+}
+export interface AgentChange {
+  id: number; run_id: number; kind: 'create' | 'update' | 'pause' | 'resume'; change: Record<string, unknown>; reason: string;
+  status: 'pending' | 'approved' | 'rejected'; created_at: string; decided_at: string | null;
+  agent_slug: string | null; agent_name: string | null; current_description: string | null; current_instructions: string | null; current_tools: string[] | null;
+}
+export interface Workforce { agents: WorkforceAgent[]; changes: AgentChange[]; tools: Record<string, WorkerTool> }
+export interface WorkforceDetail {
+  agent: WorkforceAgent;
+  runs: { id: number; trigger: string; status: RunSummary['status']; task: string | null; parent_run_id: number | null; queued_at: string; finished_at: string | null; duration_ms: number | null; error: string | null }[];
+  reports: { id: number; run_id: number; body_md: string; summary: string; created_at: string; html?: string }[];
+}
+export type WorkforceAgentWrite = Partial<Pick<WorkforceAgent, 'slug' | 'name' | 'description' | 'instructions_md' | 'tools' | 'enabled'>>;
+
 export interface AgentsClient {
+  workforce?(): Promise<Workforce>;
+  workforceAgent?(slug: string): Promise<WorkforceDetail>;
+  saveWorkforceAgent?(agent: WorkforceAgentWrite, slug?: string): Promise<{ agent: WorkforceAgent }>;
+  queueWorkforceTask?(slug: string, task: string): Promise<{ run: { id: number } }>;
+  decideAgentChange?(id: number, decision: 'approved' | 'rejected'): Promise<{ id: number; status: string; agent: WorkforceAgent | null }>;
   /** Queue a read-only console reply. 409 while the last message is still being answered. */
   chat?(messages: ChatMessage[]): Promise<{ id: number }>;
   chatStatus?(id: number): Promise<ChatStatus>;
@@ -190,6 +216,11 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
   };
 
   return {
+    workforce: () => call('GET', '/workforce'),
+    workforceAgent: (slug) => call('GET', `/workforce/agents/${encodeURIComponent(slug)}`),
+    saveWorkforceAgent: (agent, slug) => call(slug ? 'PATCH' : 'POST', slug ? `/workforce/agents/${encodeURIComponent(slug)}` : '/workforce/agents', agent),
+    queueWorkforceTask: (slug, task) => call('POST', `/workforce/agents/${encodeURIComponent(slug)}/tasks`, { task }),
+    decideAgentChange: (id, decision) => call('POST', `/workforce/changes/${id}/decision`, { decision }),
     chat: async (messages) => ({ id: (await call<{ run: { id: number } }>('POST', '/chat', { messages })).run.id }),
     chatStatus: (id) => call('GET', `/chat/${id}`),
     backlog: () => call('GET', '/backlog'),
