@@ -583,11 +583,12 @@ class App extends Component {
         const dayStart = weekStart + day * DAY_MS;
         if (start >= dayStart + DAY_MS || end <= dayStart) continue;
         const colour = event.overlay ? null : calColour(event);
-        if (event.allDay) mock.allDay.push({ day, title: event.title, colour });
+        const link = event.overlay ? undefined : event.link;
+        if (event.allDay) mock.allDay.push({ day, title: event.title, colour, link });
         else mock.events.push({
           day, start: (Math.max(start, dayStart) - dayStart) / 3_600_000,
           hours: (Math.min(end, dayStart + DAY_MS) - Math.max(start, dayStart)) / 3_600_000,
-          title: event.title, kind: event.overlay ? 'pend' : 'life', overlay: !!event.overlay, actionId: event.actionId, colour,
+          title: event.title, kind: event.overlay ? 'pend' : 'life', overlay: !!event.overlay, actionId: event.actionId, colour, link,
           note: [event.calendar, event.location].filter(Boolean).join(' · '),
         });
       }
@@ -629,17 +630,13 @@ class App extends Component {
   }
 
   renderNav(v) {
-    const items = [
-      { label: 'Home', view: 'home', go: () => this.openView('home') },
-      { label: 'Dashboard', view: 'hq', go: () => this.openView('hq') },
-      { label: 'Inbox', view: 'inbox', badge: v.unread + v.pending || '', go: () => this.openView('inbox') },
-      { label: 'Projects', view: 'projects', go: () => this.openView('projects') },
-      { label: 'Finance', view: 'finance', go: () => this.openView('finance') },
-      { label: 'Backlog', view: 'backlog', go: () => this.openView('backlog') },
-      { label: 'Settings', view: 'settings', go: () => this.openView('settings') },
-      { label: 'Knowledge', view: 'knowledge', go: () => this.openView('knowledge') },
-      { label: 'Agents', view: 'agents', go: () => this.openView('agents') },
-      { label: 'Life', view: 'life', go: () => this.openView('life') },
+    // Sidebar tabs sit in small groups so the list scans quickly. On phones the groups flatten into one strip.
+    const item = (label, view, extra = {}) => ({ label, view, go: () => this.openView(view), ...extra });
+    const groups = [
+      { title: 'Today', items: [item('Home', 'home'), item('Dashboard', 'hq'), item('Inbox', 'inbox', { badge: v.unread + v.pending || '' })] },
+      { title: 'Work', items: [item('Projects', 'projects'), item('Backlog', 'backlog'), item('Knowledge', 'knowledge')] },
+      { title: 'Personal', items: [item('Finance', 'finance'), item('Life', 'life')] },
+      { title: 'System', items: [item('Agents', 'agents'), item('Settings', 'settings')] },
     ];
     const dot = { run: ['var(--accent)', 'var(--accent)'], wait: ['transparent', 'var(--a400)'], idle: ['transparent', 'var(--n600)'] };
     return html`
@@ -651,15 +648,15 @@ class App extends Component {
             <span class="fs12 muted">${v.mock.name}’s personal OS</span>
           </span>
         </button>
-        <div class="col items" style="gap: 2px;">
-          ${items.map((n) =>
-            n.href
-              ? html`<a class="nav-item" href=${n.href}><span class="grow">${n.label}</span></a>`
-              : html`<button type="button" class=${`nav-item${n.view === this.state.view ? ' on' : ''}${n.go ? '' : ' soon'}`} onClick=${n.go} disabled=${!n.go} aria-current=${n.view === this.state.view ? 'page' : null} title=${n.go ? null : 'Not built yet'}>
-                  <span class="grow">${n.label}</span>
-                  ${n.badge ? html`<span class="badge">${n.badge}</span>` : null}
-                </button>`,
-          )}
+        <div class="col items">
+          ${groups.map((g) => html`<div class="col nav-group" role="group" aria-labelledby=${`nav-${g.title}`}>
+            <span class="nav-group-title fs12 muted" id=${`nav-${g.title}`}>${g.title}</span>
+            ${g.items.map((n) => html`<button type="button" class=${`nav-item${n.view === this.state.view ? ' on' : ''}`} onClick=${n.go}
+                aria-current=${n.view === this.state.view ? 'page' : null}>
+                <span class="grow">${n.label}</span>
+                ${n.badge ? html`<span class="badge">${n.badge}</span>` : null}
+              </button>`)}
+          </div>`)}
         </div>
         <div class="col workforce" style="gap: 8px; padding: 0 10px;">
           <button class="fs12 muted wf-side-link" onClick=${() => this.openView('agents')}>Workforce${this.state.data.pendingAgentChanges ? html` <span class="badge">${this.state.data.pendingAgentChanges}</span>` : ''}</button>
@@ -1585,7 +1582,9 @@ class App extends Component {
               <span class="fs10 muted" style="text-align: right; padding: 4px 8px 0 0;">all day</span>
               ${v.week.map(
                 (_, i) => html`<div class="col" style="gap: 2px; padding: 0 3px;">
-                  ${v.mock.allDay.filter((a) => a.day === i).map((a) => html`<span class="all-day-ev" title=${a.title} style=${a.colour ? `background: ${a.colour}; color: #fff;` : ''}>${a.title}</span>`)}
+                  ${v.mock.allDay.filter((a) => a.day === i).map((a) => a.link
+                    ? html`<a class="all-day-ev" href=${a.link} target="_blank" rel="noopener noreferrer" title=${`${a.title} · Open in Google Calendar`} style=${a.colour ? `background: ${a.colour}; color: #fff; text-decoration: none;` : 'text-decoration: none;'}>${a.title}</a>`
+                    : html`<span class="all-day-ev" title=${a.title} style=${a.colour ? `background: ${a.colour}; color: #fff;` : ''}>${a.title}</span>`)}
                 </div>`,
               )}
             </div>
@@ -1605,7 +1604,8 @@ class App extends Component {
                       const c = styleOf(e);
                       const time = `${hhmm(e.start)}–${hhmm(e.start + e.hours)}`;
                       const layout = layouts[i].get(e);
-                      const pick = () => e.actionId ? this.openProposal(e.actionId) :
+                      // Google events open in Google Calendar to edit there; Moniqr requests open their proposal.
+                      const pick = () => e.link ? window.open(e.link, '_blank', 'noopener,noreferrer') : e.actionId ? this.openProposal(e.actionId) :
                         this.setState({
                           pick: {
                             title: e.title,
@@ -1618,7 +1618,7 @@ class App extends Component {
                       return html`<button type="button"
                         class=${`ev${e.overlay ? ' request' : ''}`}
                         aria-label=${`${e.overlay ? 'Moniqr request: ' : 'Event: '}${e.title}, ${time}`}
-                        title=${`${e.overlay ? 'Moniqr request: ' : ''}${e.title} · ${time}${e.note ? ' · ' + e.note : ''}`}
+                        title=${`${e.overlay ? 'Moniqr request: ' : ''}${e.title} · ${time}${e.note ? ' · ' + e.note : ''}${e.link ? ' · Open in Google Calendar' : ''}`}
                         onClick=${pick}
                         style=${`top: ${(e.start - H0) * PX}px; height: ${Math.max(e.hours * PX - 2, 18)}px; background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border}; ${e.colour ? `border-left: 3px solid ${c.border};` : ''} color: ${c.fg}; left: ${layout.left}%; width: ${layout.width}%; right: auto;`}
                       >

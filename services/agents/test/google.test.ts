@@ -96,8 +96,8 @@ test('events carry their Google colour: the event colour first, else the calenda
   const google = fakeGoogle({
     '/calendar/v3/users/me/calendarList': { items: [{ id: 'main', primary: true, backgroundColor: '#9FC6E7' }, { id: 'plain' }] },
     '/calendar/v3/calendars/main/events': { items: [
-      { summary: 'Tinted', colorId: '11', start: { dateTime: '2027-01-01T09:00:00+10:00' }, end: { dateTime: '2027-01-01T10:00:00+10:00' } },
-      { summary: 'Calendar coloured', start: { dateTime: '2027-01-01T11:00:00+10:00' }, end: { dateTime: '2027-01-01T12:00:00+10:00' } },
+      { summary: 'Tinted', colorId: '11', htmlLink: 'https://www.google.com/calendar/event?eid=abc', start: { dateTime: '2027-01-01T09:00:00+10:00' }, end: { dateTime: '2027-01-01T10:00:00+10:00' } },
+      { summary: 'Calendar coloured', htmlLink: 'https://evil.example/calendar', start: { dateTime: '2027-01-01T11:00:00+10:00' }, end: { dateTime: '2027-01-01T12:00:00+10:00' } },
     ] },
     '/calendar/v3/calendars/plain/events': { items: [
       { summary: 'No colour', start: { dateTime: '2027-01-01T13:00:00+10:00' }, end: { dateTime: '2027-01-01T14:00:00+10:00' } },
@@ -106,6 +106,8 @@ test('events carry their Google colour: the event colour first, else the calenda
   const events = await googleCalendar(creds, google.impl).listEvents(new Date(), new Date());
   assert.deepEqual(events.map((e) => [e.title, e.color]), [['Tinted', '#d50000'], ['Calendar coloured', '#9fc6e7'], ['No colour', undefined]]);
   assert.equal(events[0]!.calendarColor, '#9fc6e7', 'the legend keeps the calendar colour even when an event overrides it');
+  assert.equal(events[0]!.link, 'https://www.google.com/calendar/event?eid=abc');
+  assert.equal(events[1]!.link, undefined, 'only Google Calendar links are passed on');
 });
 
 test('a revoked refresh token gives a clear error', async () => {

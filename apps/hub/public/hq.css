@@ -155,6 +155,9 @@ input::placeholder { color: var(--n500); }
 .nav-item.on { background: var(--wash-8); color: var(--n100); }
 .nav-item.soon { cursor: default; }
 .nav-item.soon:hover { background: transparent; }
+.nav .items { gap: 16px; }
+.nav-group { gap: 2px; }
+.nav-group-title { padding: 0 10px 4px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
 .badge { font-size: 11px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--on-accent); display: flex; align-items: center; justify-content: center; }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .up-next { margin: 0 4px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--n100) 5%, transparent); display: flex; flex-direction: column; gap: 2px; }
@@ -362,7 +365,8 @@ html.cal-full-open, html.cal-full-open body { overflow: hidden; }
   .shell { flex-direction: column; }
   .nav { width: auto; flex-direction: row; align-items: center; gap: 12px; padding: 10px 16px; overflow-x: auto; }
   .nav .brand-text, .nav .workforce, .nav .spacer, .nav .up-next { display: none; }
-  .nav .items { flex-direction: row !important; }
+  .nav .items, .nav-group { flex-direction: row !important; gap: 2px; }
+  .nav-group-title { display: none; }
   .nav-item { padding: 6px 10px; white-space: nowrap; }
   .topbar { padding: 10px 16px; gap: 12px; flex-wrap: wrap; }
   .topbar .clock { display: none; }

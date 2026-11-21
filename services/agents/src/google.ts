@@ -61,6 +61,8 @@ export interface CalendarEvent {
   color?: string;
   /** The event's calendar colour (#rrggbb), for a legend. */
   calendarColor?: string;
+  /** The event's page in Google Calendar. Only Google's own calendar URLs are kept. */
+  link?: string;
   location?: string;
   /** Free text from the event. Untrusted. */
   description?: string;
@@ -181,6 +183,7 @@ interface RawEvent {
   end?: { dateTime?: string; date?: string };
   attendees?: { self?: boolean; responseStatus?: string }[];
   colorId?: string;
+  htmlLink?: string;
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -203,6 +206,7 @@ function toEvent(calendar: string, e: RawEvent, calendarColour?: string): Calend
     allDay,
     ...((e.colorId && EVENT_COLOURS[e.colorId]) || calendarColour ? { color: (e.colorId && EVENT_COLOURS[e.colorId]) || calendarColour } : {}),
     ...(calendarColour ? { calendarColor: calendarColour } : {}),
+    ...(e.htmlLink?.startsWith('https://www.google.com/calendar/') ? { link: e.htmlLink } : {}),
     ...(e.location ? { location: e.location } : {}),
     ...(description
       ? { description: description.length > DESCRIPTION_LIMIT ? `${description.slice(0, DESCRIPTION_LIMIT)}…` : description }
