@@ -43,6 +43,9 @@ const agents: AgentsClient = {
   },
   saveWorkforceAgent: async (agent, slug) => { workforceWrites.push({ agent, slug }); return { agent: { ...agent, slug: slug ?? agent.slug } as any }; },
   queueWorkforceTask: async (slug, task) => { workforceWrites.push({ slug, task }); return { run: { id: 9 } }; },
+  addAgentSchedule: async (slug, schedule) => { workforceWrites.push({ slug, schedule }); return { schedule: { id: 4, ...schedule } as any }; },
+  updateAgentSchedule: async (id, patch) => { workforceWrites.push({ id, patch }); return { schedule: { id, ...patch } as any }; },
+  deleteAgentSchedule: async (id) => { workforceWrites.push({ id, deleted: true }); return { id, deleted: true }; },
   decideAgentChange: async (id, decision) => {
     if (id === 404) throw new AgentApiError(409, 'This change was already approved');
     workforceWrites.push({ id, decision }); return { id, status: decision, agent: null };
@@ -518,6 +521,16 @@ test('the workforce routes need a session and same-origin writes, pass only know
   assert.deepEqual(workforceWrites.at(-1), { id: 3, decision: 'approved' });
   assert.equal((await post('/workforce/changes/404/decision', { decision: 'approved' }, ok)).status, 409);
   assert.equal((await post('/workforce/changes/0/decision', { decision: 'approved' }, ok)).status, 400);
+
+  r = await post('/workforce/agents/bills/schedules', { cron: '0 7 * * *', task: 'Check bills', next_run_at: 'x' }, ok);
+  assert.equal(r.status, 201);
+  assert.deepEqual(workforceWrites.at(-1), { slug: 'bills', schedule: { cron: '0 7 * * *', task: 'Check bills' } });
+  r = await post('/workforce/schedules/4', { enabled: false, agent_id: 1 }, ok);
+  assert.deepEqual(workforceWrites.at(-1), { id: 4, patch: { enabled: false } });
+  r = await post('/workforce/schedules/4/delete', {}, ok);
+  assert.deepEqual(workforceWrites.at(-1), { id: 4, deleted: true });
+  assert.equal((await post('/workforce/schedules/abc', {}, ok)).status, 400);
+  assert.equal((await post('/workforce/schedules/4/delete', {}, authed)).status, 403);
 
   const hq = await (await get('/api/hq', authed)).json();
   assert.deepEqual(hq.workforce, [{ slug: 'researcher', name: 'Research Analyst', enabled: true, active: 1, last: 'running' }]);

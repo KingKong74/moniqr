@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import type { Pool } from '../src/db.js';
 import { claimNextRun, finishRun, queueRun } from '../src/runs.js';
+import { tick } from '../src/scheduler.js';
 import { API_TOKEN, freshDatabase, skipReason, startApp } from './helpers.js';
 
 describe('workforce', { skip: skipReason }, () => {
@@ -172,5 +173,79 @@ describe('workforce', { skip: skipReason }, () => {
     assert.equal(list.body.changes.length, 0);
     const history = await api.call('GET', '/workforce/changes', API_TOKEN);
     assert.deepEqual(history.body.changes.map((c: { status: string }) => c.status).sort(), ['approved', 'approved', 'rejected']);
+  });
+
+  test('standing tasks: Bailey schedules a worker, the scheduler hands it the task, and a busy slot is skipped', async () => {
+    await api.call('PATCH', '/workforce/agents/researcher', API_TOKEN, { enabled: true });
+    const bad = async (body: unknown) => (await api.call('POST', '/workforce/agents/researcher/schedules', API_TOKEN, body)).status;
+    assert.equal(await bad({ cron: '* * * * *', task: 'Spam' }), 400, 'more often than hourly is refused');
+    assert.equal(await bad({ cron: '*/30 9 * * *', task: 'Spam' }), 400, 'half-hourly bursts are refused');
+    assert.equal(await bad({ cron: '0 7 * *', task: 'x' }), 400);
+    assert.equal(await bad({ cron: 'nonsense here a b c', task: 'x' }), 400);
+    assert.equal(await bad({ cron: '0 7 * * *', task: '' }), 400);
+    assert.equal((await api.call('POST', '/workforce/agents/ea/schedules', API_TOKEN, { cron: '0 7 * * *', task: 'x' })).status, 404, 'not the EA');
+
+    const created = await api.call('POST', '/workforce/agents/researcher/schedules', API_TOKEN, { cron: '0 7 * * 1-5', task: 'Check for new bills' });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const id = created.body.schedule.id;
+    assert.ok(created.body.schedule.next_run_at, 'an enabled schedule is timed from now');
+    let detail = await api.call('GET', '/workforce/agents/researcher', API_TOKEN);
+    assert.equal(detail.body.schedules[0].task, 'Check for new bills');
+    assert.equal((await api.call('GET', '/workforce', API_TOKEN)).body.agents.find((a: any) => a.slug === 'researcher').schedules, 1);
+
+    // Make it due and tick: one task run, carrying the schedule's text.
+    await pool.query(`UPDATE schedules SET next_run_at = now() - interval '1 minute' WHERE id = $1`, [id]);
+    const [runId] = await tick(pool);
+    const run = (await pool.query('SELECT trigger, kind, input, schedule_id FROM runs WHERE id = $1', [runId])).rows[0];
+    assert.deepEqual(run, { trigger: 'schedule', kind: 'task', input: { task: 'Check for new bills', from: 'schedule' }, schedule_id: id });
+    // Due again while that run is still queued: skipped, but moved on.
+    await pool.query(`UPDATE schedules SET next_run_at = now() - interval '1 minute' WHERE id = $1`, [id]);
+    assert.deepEqual(await tick(pool), []);
+    assert.ok((await pool.query('SELECT next_run_at > now() AS later FROM schedules WHERE id = $1', [id])).rows[0].later);
+
+    // The first run reports; the next scheduled run sees that report.
+    const first = (await claimNextRun(pool, 60_000))!;
+    assert.equal(first.run.id, runId);
+    assert.equal(first.previousReport, undefined);
+    await api.call('POST', `/runs/${first.run.id}/report`, first.runToken, { body_md: 'Two bills: water and power.', summary: 'Two bills.' });
+    await finishRun(pool, first.run.id, { status: 'done' });
+    await pool.query(`UPDATE schedules SET next_run_at = now() - interval '1 minute' WHERE id = $1`, [id]);
+    await tick(pool);
+    const second = (await claimNextRun(pool, 60_000))!;
+    assert.equal(second.previousReport?.body_md, 'Two bills: water and power.');
+    await cleanup(second.run.id);
+
+    // A paused agent's schedules don't fire; switching a schedule off clears its next time.
+    await api.call('PATCH', '/workforce/agents/researcher', API_TOKEN, { enabled: false });
+    await pool.query(`UPDATE schedules SET next_run_at = now() - interval '1 minute' WHERE id = $1`, [id]);
+    assert.deepEqual(await tick(pool), []);
+    await api.call('PATCH', '/workforce/agents/researcher', API_TOKEN, { enabled: true });
+    const off = await api.call('PATCH', `/workforce/schedules/${id}`, API_TOKEN, { enabled: false });
+    assert.equal(off.body.schedule.next_run_at, null);
+    const on = await api.call('PATCH', `/workforce/schedules/${id}`, API_TOKEN, { enabled: true, cron: '30 18 * * 0' });
+    assert.ok(Date.parse(on.body.schedule.next_run_at) > Date.now(), 'switching back on never fires straight away');
+
+    // Removing it keeps the runs it made. EA schedules can't be touched through these routes.
+    assert.equal((await api.call('DELETE', `/workforce/schedules/${id}`, API_TOKEN)).status, 200);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM runs WHERE id IN ($1, $2)', [first.run.id, second.run.id])).rows[0].n, 2);
+    const eaSchedule = (await pool.query(`SELECT s.id FROM schedules s JOIN agents a ON a.id = s.agent_id WHERE a.slug = 'ea' LIMIT 1`)).rows[0].id;
+    assert.equal((await api.call('DELETE', `/workforce/schedules/${eaSchedule}`, API_TOKEN)).status, 404);
+    assert.equal((await api.call('PATCH', `/workforce/schedules/${eaSchedule}`, API_TOKEN, { enabled: false })).status, 404);
+  });
+
+  test('the EA can ask for a schedule, and only approval adds it', async () => {
+    const claimed = (await eaRun())!;
+    const ask = (body: unknown) => api.call('POST', `/runs/${claimed.run.id}/agent-changes`, claimed.runToken, body);
+    assert.equal((await ask({ kind: 'schedule', slug: 'researcher', reason: 'x', schedule: { cron: '* * * * *', task: 'x' } })).status, 400);
+    const asked = await ask({ kind: 'schedule', slug: 'researcher', reason: 'Bills arrive weekly', schedule: { cron: '0 8 * * 1', task: 'List bills due this week' } });
+    assert.equal(asked.status, 201, JSON.stringify(asked.body));
+    const roster = await api.call('GET', `/runs/${claimed.run.id}/agents`, claimed.runToken);
+    assert.equal(roster.body.pending_changes[0].schedule.task, 'List bills due this week');
+    await cleanup(claimed.run.id);
+    let detail = await api.call('GET', '/workforce/agents/researcher', API_TOKEN);
+    assert.equal(detail.body.schedules.length, 0, 'nothing until Bailey approves');
+    assert.equal((await api.call('POST', `/workforce/changes/${asked.body.change.id}/decision`, API_TOKEN, { decision: 'approved' })).status, 200);
+    detail = await api.call('GET', '/workforce/agents/researcher', API_TOKEN);
+    assert.deepEqual(detail.body.schedules.map((s: any) => [s.cron, s.task, s.enabled]), [['0 8 * * 1', 'List bills due this week', true]]);
   });
 });

@@ -4,7 +4,9 @@
 // Every agent's tools come from a fixed read-only set; none can send, pay, book or change anything.
 import { Component, html } from '/vendor/preact-htm.js';
 
-const KIND = { create: 'Create', update: 'Change', pause: 'Pause', resume: 'Resume' };
+const KIND = { create: 'Create', update: 'Change', pause: 'Pause', resume: 'Resume', schedule: 'Schedule' };
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const NEW_SCHEDULE = { freq: 'weekdays', day: '1', time: '07:00', cron: '', task: '' };
 const RUN = { queued: 'Queued', running: 'Working', done: 'Done', failed: 'Failed' };
 const BLANK = { slug: '', name: '', description: '', instructions_md: '', tools: [], enabled: true };
 const FIELD_LABELS = { name: 'Name', description: 'What it is for', instructions_md: 'Instructions', tools: 'Tools' };
@@ -18,6 +20,23 @@ const ago = (iso) => {
   if (hours < 24) return `${hours} h ago`;
   return new Date(iso).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Australia/Brisbane' });
 };
+const clock = (h, m) => `${h % 12 || 12}:${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`;
+const when = (iso) => iso ? new Date(iso).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Brisbane' }) : '';
+
+/** The schedule form's choice as a cron line, in Brisbane time. */
+function cronFrom(f) {
+  if (f.freq === 'custom') return f.cron.trim();
+  const [h, m] = f.time.split(':').map(Number);
+  return `${m} ${h} * * ${f.freq === 'daily' ? '*' : f.freq === 'weekdays' ? '1-5' : f.day}`;
+}
+
+/** Plain words for the cron lines the form makes; anything else is shown as it is. */
+export function describeCron(cron) {
+  const m = /^(\d{1,2}) (\d{1,2}) \* \* (\*|1-5|[0-6])$/.exec(cron.trim());
+  if (!m) return `Custom: ${cron}`;
+  const at = clock(Number(m[2]), Number(m[1]));
+  return m[3] === '*' ? `Every day at ${at}` : m[3] === '1-5' ? `Weekdays at ${at}` : `${DAYS[Number(m[3])]}s at ${at}`;
+}
 const slugify = (s) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/^[^a-z]+/, '').slice(0, 40);
 
 function status(a) {
@@ -42,7 +61,8 @@ async function request(method, path, body) {
 }
 
 export class Workforce extends Component {
-  state = { data: null, error: '', open: null, detail: null, form: null, saving: false, formError: '', task: '', taskNote: '', deciding: null };
+  state = { data: null, error: '', open: null, detail: null, form: null, saving: false, formError: '', task: '', taskNote: '', deciding: null,
+    sched: { ...NEW_SCHEDULE }, schedNote: '' };
 
   componentDidMount() {
     this.load();
@@ -73,7 +93,7 @@ export class Workforce extends Component {
 
   open(slug) {
     if (slug === 'new') return this.setState({ open: 'new', detail: null, form: { ...BLANK }, formError: '', task: '', taskNote: '' });
-    this.setState({ open: slug, detail: null, form: null, formError: '', task: '', taskNote: '' });
+    this.setState({ open: slug, detail: null, form: null, formError: '', task: '', taskNote: '', sched: { ...NEW_SCHEDULE }, schedNote: '' });
     this.loadDetail(slug).catch((e) => this.setState({ formError: e.message }));
   }
   close() { this.setState({ open: null, detail: null, form: null, formError: '' }); }
@@ -125,6 +145,31 @@ export class Workforce extends Component {
     }
   }
 
+  async addSchedule(e) {
+    e.preventDefault();
+    const { sched, open } = this.state;
+    this.setState({ saving: true, schedNote: '' });
+    try {
+      await request('POST', `/workforce/agents/${open}/schedules`, { cron: cronFrom(sched), task: sched.task });
+      this.setState({ sched: { ...NEW_SCHEDULE } });
+      await this.load(true);
+    } catch (err) {
+      this.setState({ schedNote: err.message });
+    } finally {
+      this.setState({ saving: false });
+    }
+  }
+
+  async changeSchedule(id, path, body) {
+    this.setState({ schedNote: '' });
+    try {
+      await request('POST', `/workforce/schedules/${id}${path}`, body);
+      await this.load(true);
+    } catch (err) {
+      this.setState({ schedNote: err.message });
+    }
+  }
+
   async decide(change, decision) {
     this.setState({ deciding: change.id });
     try {
@@ -165,6 +210,7 @@ export class Workforce extends Component {
   renderChange(c, tools) {
     const toolNames = (list) => (list?.length ? list.map((t) => tools[t]?.label ?? t).join(', ') : 'None');
     const proposed = c.kind === 'create' ? c.change.agent : c.change.fields;
+    const sched = c.kind === 'schedule' ? c.change.schedule : null;
     const title = c.kind === 'create' ? `${KIND.create} ${proposed?.name ?? 'an agent'}` : `${KIND[c.kind]} ${c.agent_name ?? c.agent_slug}`;
     const current = { name: c.agent_name, description: c.current_description, instructions_md: c.current_instructions, tools: c.current_tools };
     const busy = this.state.deciding === c.id;
@@ -176,6 +222,7 @@ export class Workforce extends Component {
         <dd>${c.kind === 'update' && html`<div class="fs13 dim wf-was">Now: ${k === 'tools' ? toolNames(current[k]) : k === 'instructions_md' ? html`<details><summary>Show current</summary><pre class="wf-pre">${current[k]}</pre></details>` : current[k] || '(empty)'}</div>`}
           ${c.kind === 'update' && k !== 'instructions_md' && html`<span class="fs13 muted">Proposed: </span>`}${k === 'tools' ? toolNames(proposed[k]) : k === 'instructions_md' ? html`<details open=${c.kind === 'create'}><summary class="fs13">${c.kind === 'update' ? 'Proposed instructions' : 'Instructions'}</summary><pre class="wf-pre">${proposed[k]}</pre></details>` : proposed[k]}</dd>`)}
       </dl>`}
+      ${sched && html`<dl class="wf-diff"><dt class="fs12 muted">When</dt><dd>${describeCron(sched.cron)}</dd><dt class="fs12 muted">Task</dt><dd class="wf-task">${sched.task}</dd></dl>`}
       <div class="row wrap"><button class="btn btn-primary sm" disabled=${busy} onClick=${() => this.decide(c, 'approved')}>Approve</button>
         <button class="btn btn-secondary sm" disabled=${busy} onClick=${() => this.decide(c, 'rejected')}>Reject</button></div>
     </article>`;
@@ -197,7 +244,7 @@ export class Workforce extends Component {
             <h3>${a.name}</h3>
             <p class="fs13 soft">${a.description || html`<span class="dim">No description</span>`}</p>
             <div class="row wrap wf-tools">${a.tools.length ? a.tools.map((t) => html`<span class="wf-tool">${data.tools[t]?.label ?? t}</span>`) : html`<span class="fs12 dim">No data tools</span>`}</div>
-            <span class="fs12 muted">${a.reports} ${a.reports === 1 ? 'report' : 'reports'}</span>
+            <span class="fs12 muted">${a.reports} ${a.reports === 1 ? 'report' : 'reports'}${a.schedules ? ` · ${a.enabled ? `next run ${when(a.next_run_at)}` : `${a.schedules} schedule${a.schedules === 1 ? '' : 's'} paused`}` : ''}</span>
           </button>`;
         })}
       </div>
@@ -235,6 +282,36 @@ export class Workforce extends Component {
     </section>`;
   }
 
+  renderSchedules(detail) {
+    const { sched, schedNote, saving } = this.state;
+    const set = (k, v) => this.setState((st) => ({ sched: { ...st.sched, [k]: v } }));
+    return html`<div class="col wf-schedules" style="gap: 8px;">
+      <h3 class="fs15">Schedule <span class="fs12 muted">Brisbane time</span></h3>
+      ${detail.schedules.length ? detail.schedules.map((s) => html`<div class="dashboard-list-row col wf-schedule">
+        <div class="between wrap"><strong class="fs14">${describeCron(s.cron)}</strong>
+          <span class="row" style="gap: 10px;">
+            <label class="row fs13"><input type="checkbox" checked=${s.enabled} onChange=${(e) => this.changeSchedule(s.id, '', { enabled: e.target.checked })} /> On</label>
+            <button class="btn btn-ghost sm" onClick=${() => confirm('Remove this schedule? Past reports stay.') && this.changeSchedule(s.id, '/delete', {})}>Remove</button></span></div>
+        <span class="fs13 wf-task">${s.task}</span>
+        <span class="fs12 muted">${!detail.agent.enabled ? 'Agent paused' : s.enabled ? `Next run ${when(s.next_run_at)}` : 'Off'}${s.last_run ? ` · last ran ${ago(s.last_run.queued_at)} (${RUN[s.last_run.status].toLowerCase()})` : ''}</span>
+      </div>`) : html`<p class="fs13 muted">No schedule. It only works when you or your EA hand it a task.</p>`}
+      <form class="col personal-form wf-schedule-form" onSubmit=${(e) => this.addSchedule(e)}>
+        <div class="row wrap">
+          <label class="col" style="flex: 1 1 130px;">Runs<select class="field" value=${sched.freq} onChange=${(e) => set('freq', e.target.value)}>
+            <option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Once a week</option><option value="custom">Custom (cron)</option></select></label>
+          ${sched.freq === 'weekly' && html`<label class="col" style="flex: 1 1 120px;">On<select class="field" value=${sched.day} onChange=${(e) => set('day', e.target.value)}>
+            ${DAYS.map((d, i) => html`<option value=${String(i)}>${d}</option>`)}</select></label>`}
+          ${sched.freq === 'custom'
+            ? html`<label class="col" style="flex: 2 1 160px;">Cron<input class="field" placeholder="0 7 * * 1-5" value=${sched.cron} onInput=${(e) => set('cron', e.target.value)} /></label>`
+            : html`<label class="col" style="flex: 1 1 100px;">At<input class="field" type="time" required value=${sched.time} onInput=${(e) => set('time', e.target.value)} /></label>`}
+        </div>
+        <label class="col">Standing task<textarea class="field" rows="2" maxlength="4000" required placeholder="What it should do each time" value=${sched.task} onInput=${(e) => set('task', e.target.value)}></textarea></label>
+        <div class="row wrap"><button class="btn btn-secondary" type="submit" disabled=${saving || !sched.task.trim()}>Add schedule</button>
+          ${schedNote && html`<span class="fs13 coral" role="alert">${schedNote}</span>`}</div>
+      </form>
+    </div>`;
+  }
+
   renderWork(detail) {
     const { task, taskNote, saving } = this.state;
     return html`<div class="col wf-work">
@@ -244,6 +321,7 @@ export class Workforce extends Component {
           ${!detail.agent.enabled && html`<span class="fs12 muted">Paused</span>`}
           ${taskNote && html`<span class="fs13 muted" role="status">${taskNote}</span>`}</div>
       </form>
+      ${this.renderSchedules(detail)}
       <div class="col" style="gap: 4px;"><h3 class="fs15">Reports</h3>
         ${detail.reports.length ? detail.reports.map((r) => html`<details class="dashboard-list-row wf-report">
           <summary><span class="fs12 muted">${ago(r.created_at)}</span> <span>${r.summary}</span></summary>
@@ -251,7 +329,7 @@ export class Workforce extends Component {
       </div>
       <div class="col" style="gap: 4px;"><h3 class="fs15">Tasks</h3>
         ${detail.runs.length ? detail.runs.map((r) => html`<div class="dashboard-list-row col">
-          <div class="between"><span class="fs12 muted">${r.trigger === 'delegated' ? 'From your EA' : 'From you'} · ${ago(r.queued_at)}</span>
+          <div class="between"><span class="fs12 muted">${r.trigger === 'delegated' ? 'From your EA' : r.trigger === 'schedule' ? 'Scheduled' : 'From you'} · ${ago(r.queued_at)}</span>
             <span class=${`fs12 ${r.status === 'failed' ? 'coral' : r.status === 'done' ? 'muted' : 'steel'}`}>${RUN[r.status]}</span></div>
           <span class="fs13 wf-task">${r.task}</span>
           ${r.error && html`<span class="fs12 coral">${r.error}</span>`}</div>`) : html`<p class="fs13 muted">No tasks yet.</p>`}

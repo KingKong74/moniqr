@@ -6,6 +6,7 @@ import { bearer } from '../tokens.js';
 import {
   agentInput, agentPatch, changeInput, createAgent, decideChange, delegateInput, getAgent, listAgents, listChanges,
   proposeChange, queueTask, recentReports, reportInput, rosterForEa, taskInput, updateAgent, WORKER_TOOLS, writeReport,
+  addSchedule, deleteSchedule, scheduleInput, schedulePatch, updateSchedule,
 } from '../workforce.js';
 
 const idParam = z.coerce.number().int().positive();
@@ -33,6 +34,15 @@ export function workforceRoutes(app: Express, pool: Pool, hub: RequestHandler) {
   app.post('/workforce/agents/:slug/tasks', hub, async (req, res) => {
     const { task } = taskInput.parse(req.body);
     res.status(202).json({ run: await queueTask(pool, slugParam.parse(req.params.slug), task) });
+  });
+  app.post('/workforce/agents/:slug/schedules', hub, async (req, res) => {
+    res.status(201).json({ schedule: await addSchedule(pool, slugParam.parse(req.params.slug), scheduleInput.parse(req.body)) });
+  });
+  app.patch('/workforce/schedules/:id', hub, async (req, res) => {
+    res.json({ schedule: await updateSchedule(pool, idParam.parse(req.params.id), schedulePatch.parse(req.body)) });
+  });
+  app.delete('/workforce/schedules/:id', hub, async (req, res) => {
+    res.json(await deleteSchedule(pool, idParam.parse(req.params.id)));
   });
   app.post('/workforce/changes/:id/decision', hub, async (req, res) => {
     const { decision } = z.object({ decision: z.enum(['approved', 'rejected']) }).strict().parse(req.body);

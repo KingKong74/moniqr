@@ -96,7 +96,7 @@ export async function saveBriefSettings(pool: Pool, body: z.infer<typeof briefSe
       const enabled = body[`${slot}_enabled`];
       await client.query(`INSERT INTO schedules (agent_id,kind,cron,timezone,enabled,next_run_at)
         SELECT id,$1,$2,'Australia/Brisbane',$3,$4 FROM agents WHERE slug='ea'
-        ON CONFLICT (agent_id,kind) DO UPDATE SET cron=excluded.cron,timezone=excluded.timezone,
+        ON CONFLICT (agent_id,kind) WHERE kind <> 'task' DO UPDATE SET cron=excluded.cron,timezone=excluded.timezone,
         enabled=excluded.enabled,next_run_at=excluded.next_run_at`,
       [`${slot}_brief`, cron, enabled, enabled ? nextFireAfter(cron, 'Australia/Brisbane', new Date()) : null]);
     }

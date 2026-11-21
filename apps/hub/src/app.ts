@@ -281,18 +281,21 @@ export function createApp(opts: HubOptions) {
       res.json({ ...detail, reports: detail.reports.map((r) => ({ ...r, html: renderMarkdown(r.body_md) })) });
     } catch (err) { workforceError(err, res); }
   });
-  for (const path of ['/workforce/agents', '/workforce/agents/:slug', '/workforce/agents/:slug/tasks', '/workforce/changes/:id/decision']) {
+  for (const path of ['/workforce/agents', '/workforce/agents/:slug', '/workforce/agents/:slug/tasks', '/workforce/changes/:id/decision',
+    '/workforce/agents/:slug/schedules', '/workforce/schedules/:id', '/workforce/schedules/:id/delete']) {
     app.post(path, express.json({ limit: '64kb' }), async (req, res) => {
       if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });
       const slug = req.params.slug === undefined ? undefined : String(req.params.slug);
       if (slug !== undefined && !SLUG.test(slug)) return void res.status(400).json({ error: 'Invalid agent.' });
       const b = req.body ?? {};
       try {
-        if (path.endsWith('/decision')) {
-          const id = Number(req.params.id);
-          if (!Number.isSafeInteger(id) || id <= 0) return void res.status(400).json({ error: 'Invalid change.' });
-          return void res.json(await opts.agents.decideAgentChange!(id, b.decision));
-        }
+        const id = req.params.id === undefined ? undefined : Number(req.params.id);
+        if (id !== undefined && (!Number.isSafeInteger(id) || id <= 0)) return void res.status(400).json({ error: 'Invalid id.' });
+        if (path.endsWith('/decision')) return void res.json(await opts.agents.decideAgentChange!(id!, b.decision));
+        const schedule = Object.fromEntries(['cron', 'task', 'enabled'].filter((k) => b[k] !== undefined).map((k) => [k, b[k]]));
+        if (path === '/workforce/agents/:slug/schedules') return void res.status(201).json(await opts.agents.addAgentSchedule!(slug!, schedule));
+        if (path === '/workforce/schedules/:id') return void res.json(await opts.agents.updateAgentSchedule!(id!, schedule));
+        if (path === '/workforce/schedules/:id/delete') return void res.json(await opts.agents.deleteAgentSchedule!(id!));
         if (path.endsWith('/tasks')) return void res.status(202).json(await opts.agents.queueWorkforceTask!(slug!, b.task));
         // Only the known fields pass through; the agent API validates them.
         const keys = slug ? ['name', 'description', 'instructions_md', 'tools', 'enabled'] : ['slug', 'name', 'description', 'instructions_md', 'tools', 'enabled'];

@@ -164,7 +164,13 @@ export interface WorkforceDetail {
   agent: WorkforceAgent;
   runs: { id: number; trigger: string; status: RunSummary['status']; task: string | null; parent_run_id: number | null; queued_at: string; finished_at: string | null; duration_ms: number | null; error: string | null }[];
   reports: { id: number; run_id: number; body_md: string; summary: string; created_at: string; html?: string }[];
+  schedules: AgentSchedule[];
 }
+export interface AgentSchedule {
+  id: number; cron: string; timezone: string; task: string; enabled: boolean; next_run_at: string | null; last_run_at: string | null;
+  last_run: { id: number; status: RunSummary['status']; queued_at: string } | null;
+}
+export type AgentScheduleWrite = Partial<Pick<AgentSchedule, 'cron' | 'task' | 'enabled'>>;
 export type WorkforceAgentWrite = Partial<Pick<WorkforceAgent, 'slug' | 'name' | 'description' | 'instructions_md' | 'tools' | 'enabled'>>;
 
 export interface AgentsClient {
@@ -172,6 +178,9 @@ export interface AgentsClient {
   workforceAgent?(slug: string): Promise<WorkforceDetail>;
   saveWorkforceAgent?(agent: WorkforceAgentWrite, slug?: string): Promise<{ agent: WorkforceAgent }>;
   queueWorkforceTask?(slug: string, task: string): Promise<{ run: { id: number } }>;
+  addAgentSchedule?(slug: string, schedule: AgentScheduleWrite): Promise<{ schedule: AgentSchedule }>;
+  updateAgentSchedule?(id: number, patch: AgentScheduleWrite): Promise<{ schedule: AgentSchedule }>;
+  deleteAgentSchedule?(id: number): Promise<{ id: number; deleted: true }>;
   decideAgentChange?(id: number, decision: 'approved' | 'rejected'): Promise<{ id: number; status: string; agent: WorkforceAgent | null }>;
   /** Queue a read-only console reply. 409 while the last message is still being answered. */
   chat?(messages: ChatMessage[]): Promise<{ id: number }>;
@@ -209,8 +218,10 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
       signal: AbortSignal.timeout(path.match(/^\/(actions|findings)\/\d+\/(decision|prepare|execute|undo|calendar)$/) && method === 'POST' ? 60_000 : path === '/calendar' ? 30_000 : 5000),
     });
     if (!res.ok) {
-      const error = await res.json().catch(() => ({})) as { error?: string };
-      throw new AgentApiError(res.status, error.error ?? `Agent API ${method} ${path} returned ${res.status}`);
+      const error = await res.json().catch(() => ({})) as { error?: string; issues?: { message?: string }[] };
+      // A validation failure names its first problem, so the page can say what to fix.
+      const issue = error.issues?.[0]?.message;
+      throw new AgentApiError(res.status, issue ? `${error.error ?? 'Invalid request'}: ${issue}` : error.error ?? `Agent API ${method} ${path} returned ${res.status}`);
     }
     return (await res.json()) as T;
   };
@@ -220,6 +231,9 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
     workforceAgent: (slug) => call('GET', `/workforce/agents/${encodeURIComponent(slug)}`),
     saveWorkforceAgent: (agent, slug) => call(slug ? 'PATCH' : 'POST', slug ? `/workforce/agents/${encodeURIComponent(slug)}` : '/workforce/agents', agent),
     queueWorkforceTask: (slug, task) => call('POST', `/workforce/agents/${encodeURIComponent(slug)}/tasks`, { task }),
+    addAgentSchedule: (slug, schedule) => call('POST', `/workforce/agents/${encodeURIComponent(slug)}/schedules`, schedule),
+    updateAgentSchedule: (id, patch) => call('PATCH', `/workforce/schedules/${id}`, patch),
+    deleteAgentSchedule: (id) => call('DELETE', `/workforce/schedules/${id}`),
     decideAgentChange: (id, decision) => call('POST', `/workforce/changes/${id}/decision`, { decision }),
     chat: async (messages) => ({ id: (await call<{ run: { id: number } }>('POST', '/chat', { messages })).run.id }),
     chatStatus: (id) => call('GET', `/chat/${id}`),

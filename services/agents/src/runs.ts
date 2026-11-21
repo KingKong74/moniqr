@@ -42,6 +42,8 @@ export interface ClaimedRun {
   agent: AgentRow;
   /** Plain run token. Only the hash is stored; this is the one chance to read it. */
   runToken: string;
+  /** For a scheduled task: the report from this schedule's last run, so the worker can say what changed. */
+  previousReport?: { created_at: Date; body_md: string } | null;
 }
 
 const RUN_COLUMNS = `id, agent_id, trigger, kind, status, schedule_id, queued_at, started_at,
@@ -103,7 +105,13 @@ export async function claimNextRun(pool: Pool, staleAfterMs: number): Promise<Cl
       'SELECT id, slug, name, role, instructions_path, instructions_md, tools FROM agents WHERE id = $1',
       [run.agent_id],
     );
-    return { run, agent: agent.rows[0]!, runToken };
+    let previousReport = null;
+    if (run.kind === 'task' && run.schedule_id) {
+      previousReport = (await client.query<{ created_at: Date; body_md: string }>(
+        `SELECT rp.created_at, left(rp.body_md, 6000) AS body_md FROM reports rp JOIN runs r ON r.id = rp.run_id
+         WHERE r.schedule_id = $1 AND r.id <> $2 ORDER BY rp.id DESC LIMIT 1`, [run.schedule_id, run.id])).rows[0] ?? null;
+    }
+    return { run, agent: agent.rows[0]!, runToken, ...(previousReport ? { previousReport } : {}) };
   });
 }
 

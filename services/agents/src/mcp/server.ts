@@ -151,19 +151,22 @@ if (!chatRun && !workerRun && offer('delegate_task')) server.registerTool('deleg
 
 if (!chatRun && !workerRun && offer('propose_agent_change')) server.registerTool('propose_agent_change', {
   title: 'Ask Bailey to change an agent',
-  description: 'Ask Bailey to create an agent, change one, pause or resume it. Nothing changes until he approves it in the hub. ' +
+  description: 'Ask Bailey to create an agent, change one, pause or resume it, or give it a standing task on a schedule. Nothing changes until he approves it in the hub. ' +
     'For create, give agent: { slug, name, description, instructions_md, tools }. For update, give slug and fields to change. For pause or resume, give slug. ' +
+    'For schedule, give slug and schedule: { cron, task }, where cron is five fields in Brisbane time (e.g. "0 7 * * 1-5" for 7am weekdays), at most hourly. ' +
     'tools may only include get_daily_admin, list_calendars, get_events, search_email and read_email; all are read-only. ' +
     'Explain why in reason. At most three per run.',
   inputSchema: {
-    kind: z.enum(['create', 'update', 'pause', 'resume']),
+    kind: z.enum(['create', 'update', 'pause', 'resume', 'schedule']),
     reason: z.string().min(1).max(1000).describe('Why Bailey would want this'),
     slug: z.string().max(40).optional().describe('The existing agent, for update, pause and resume'),
     agent: z.record(z.string(), z.unknown()).optional().describe('The new agent, for create'),
     fields: z.record(z.string(), z.unknown()).optional().describe('The fields to change, for update'),
+    schedule: z.object({ cron: z.string().max(100), task: z.string().max(4000) }).optional().describe('The standing task, for schedule'),
   },
-}, async ({ kind, reason, slug, agent, fields }) => {
-  const body = kind === 'create' ? { kind, reason, agent } : kind === 'update' ? { kind, reason, slug, fields } : { kind, reason, slug };
+}, async ({ kind, reason, slug, agent, fields, schedule }) => {
+  const body = kind === 'create' ? { kind, reason, agent } : kind === 'update' ? { kind, reason, slug, fields }
+    : kind === 'schedule' ? { kind, reason, slug, schedule } : { kind, reason, slug };
   const r = await post(`/runs/${runId}/agent-changes`, body);
   return r.ok ? ok({ change: r.data.change, note: 'Waiting on Bailey. Nothing has changed yet.' }) : agentFailed('Change not saved', r);
 });
