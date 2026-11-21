@@ -233,7 +233,7 @@ export class Home extends Component {
             <h1>${locked ? 'Welcome back' : `${greeting}${name ? `, ${name}` : ''}`}</h1>
             <p>${locked ? 'Your day is ready. Sign in to see it.' : lede}</p>
             ${locked ? html`<div class="home-ctas"><button type="button" class="home-cta" onClick=${this.openSignIn}>Sign in</button></div>` : html`<div class="home-ctas">
-              <button type="button" class="home-cta" onClick=${() => this.setState({ listOpen: true, sel: null })}>Read today’s list</button>
+              <button type="button" class="home-cta" onClick=${() => go('hq')}>Open dashboard</button>
               <button type="button" class="home-link" onClick=${() => go('inbox')}>Open inbox${unread ? ` · ${unread} new` : ''}</button>
             </div>`}
           </section>
