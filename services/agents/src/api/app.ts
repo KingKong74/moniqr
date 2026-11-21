@@ -30,6 +30,7 @@ import { backlogInput, backlogPatch, createBacklogItem, updateBacklogItem, brief
   checkinInput, checkinPatch, listCheckins, createCheckin, updateCheckin } from '../personal.js';
 import { adminContext } from '../brief-context.js';
 import { workforceRoutes } from './workforce.js';
+import { proposalRequest, proposePurchase, proposeReply } from '../proposals.js';
 
 function isValidCron(cron: string): boolean {
   try {
@@ -338,6 +339,18 @@ export function createApp(opts: AppOptions) {
     const token = bearer(req.header('authorization'));
     if (!token || !(await checkRunToken(pool, id, token, { write: true }))) return void res.status(401).json({ error: 'Unauthorised' });
     const action = await proposeAction(pool, id, proposalInput.parse(req.body), opts.actionCalendarId, !!opts.calendarWriter);
+    res.status(201).json({ action });
+  });
+
+  // Reply drafts and purchase suggestions: proposals Bailey carries out himself. Workers need the matching grant.
+  app.post('/runs/:id/proposals', async (req, res) => {
+    const id = idParam.parse(req.params.id);
+    const token = bearer(req.header('authorization'));
+    const input = proposalRequest.parse(req.body);
+    const tool = input.kind === 'email_reply' ? 'draft_email_reply' : 'propose_purchase';
+    if (!token || !(await checkRunToken(pool, id, token, { write: true, tool }))) return void res.status(401).json({ error: 'Unauthorised' });
+    const { kind, ...rest } = input;
+    const action = kind === 'email_reply' ? await proposeReply(pool, id, rest as never) : await proposePurchase(pool, id, rest as never);
     res.status(201).json({ action });
   });
 

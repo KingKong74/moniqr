@@ -4,7 +4,7 @@ How moniqr's agents get more power over time without any one bug, prompt injecti
 
 ## Where it stands (Nov 2026)
 
-- Workers have a tick list of read-only tools (daily admin, calendar list and events, email search and read), plus one level 2 write: **save email findings** (approved 2026-11-21). A finding needs Email read, cites a message the worker read in that run, lands in the Inbox credited to the agent, and waits for Bailey's review. Beyond that, a worker's only write is its report.
+- Workers have a tick list of read-only tools (daily admin, calendar list and events, email search and read), plus one level 2 write: **save email findings** (approved 2026-11-21). A finding needs Email read, cites a message the worker read in that run, lands in the Inbox credited to the agent, and waits for Bailey's review. Level 3 proposals (approved 2026-11-21) are **reply drafts** (recipient and subject taken from a finding's email; the agent writes only the body) and **purchase suggestions** (item, shop, AUD price up to $5,000, https link, reason; at most three per run). Both wait in the Inbox's Proposals tab, credited to the agent. Bailey copies the reply into Gmail or buys the item himself, because neither has an executor. The EA has both tools too. Beyond these, a worker's only write is its report.
 - Workers run when Bailey or the EA hands them a task, or on their own schedules (at most hourly, Brisbane time).
 - The EA can hand out tasks but can only *ask* to create or change an agent or add a schedule. Bailey approves each ask in the hub.
 - The only outward action anywhere is the EA's calendar add, and only to one calendar, under owner-set auto-add rules or approval.
@@ -57,7 +57,7 @@ The payment instrument is the real safety net. Use a **virtual card per agent or
 ## Suggested order
 
 1. **Level 2 for workers.** Saving findings: *done 2026-11-21.* Backlog suggestions would be the next level 2 write.
-2. **Level 3, prepared carts and email drafts.** Purchases and replies arrive as proposals. Bailey acts himself. Still no outward credentials.
+2. **Level 3, prepared carts and email drafts.** Purchases and replies arrive as proposals. Bailey acts himself. Still no outward credentials. *Done 2026-11-21.*
 3. **Level 3 with executors.** Send an approved email reply, and place an approved order through one merchant API.
 4. **Budgets with a virtual card.** Start at level 5 for one agent, one merchant and a small cap, with every spend logged and shown in the brief.
 5. **Level 4 rules** for repetitive, low-stakes actions, once the logs show the proposals are reliably right.

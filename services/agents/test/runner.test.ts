@@ -32,7 +32,8 @@ test('Codex has no native execution, file edits, web, apps or ambient project in
 test('Google allowlist contains reads and local brief/finding writes only', () => {
   assert.deepEqual(allowedTools({ google: false }), ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_agents', 'mcp__agents__get_agent_reports', 'mcp__agents__delegate_task', 'mcp__agents__propose_agent_change']);
   assert.deepEqual(allowedTools({ google: true }), ['mcp__agents__write_brief', 'mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_agents', 'mcp__agents__get_agent_reports', 'mcp__agents__delegate_task', 'mcp__agents__propose_agent_change', 'mcp__agents__list_calendars',
-    'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email', 'mcp__agents__save_email_finding', 'mcp__agents__propose_action']);
+    'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email', 'mcp__agents__save_email_finding', 'mcp__agents__propose_action',
+    'mcp__agents__draft_email_reply', 'mcp__agents__propose_purchase']);
 });
 
 test('the console allowlist is read-only', () => {
@@ -41,7 +42,7 @@ test('the console allowlist is read-only', () => {
   assert.deepEqual(google, ['mcp__agents__get_daily_admin', 'mcp__agents__list_action_proposals', 'mcp__agents__list_agents', 'mcp__agents__get_agent_reports', 'mcp__agents__list_calendars',
     'mcp__agents__get_events', 'mcp__agents__search_email', 'mcp__agents__read_email']);
   const config = codexConfig({ command: 'node', args: ['server.js'], env: {} }, { google: true }, catalogPath, 'chat');
-  for (const write of ['write_brief', 'save_email_finding', 'propose_action', 'delegate_task', 'propose_agent_change', 'write_report']) assert.ok(!config.includes(`"${write}"`), write);
+  for (const write of ['write_brief', 'save_email_finding', 'propose_action', 'delegate_task', 'propose_agent_change', 'write_report', 'draft_email_reply', 'propose_purchase']) assert.ok(!config.includes(`"${write}"`), write);
   assert.ok(config.includes('shell_tool = false'));
 });
 
@@ -54,6 +55,9 @@ test("a worker's allowlist is its report plus the read-only tools ticked for it"
   assert.deepEqual(allowedTools({ google: true }, 'task', clerk), ['mcp__agents__write_report', 'mcp__agents__read_email', 'mcp__agents__save_email_finding', 'mcp__agents__search_email'],
     'a granted write is offered');
   assert.deepEqual(allowedTools({ google: false }, 'task', clerk), ['mcp__agents__write_report'], 'and needs Google like the reads it works on');
+  const shopper = { role: 'worker', tools: ['propose_purchase', 'draft_email_reply', 'save_email_finding', 'read_email'] };
+  assert.deepEqual(allowedTools({ google: false }, 'task', shopper), ['mcp__agents__write_report', 'mcp__agents__propose_purchase'],
+    'purchase suggestions need no Google; reply drafts do');
   assert.deepEqual(allowedTools({ google: true }, 'chat', worker), allowedTools({ google: true }, 'task', worker), "a worker never gets the EA's kinds");
 });
 
@@ -206,8 +210,8 @@ describe('runner', { skip: skipReason }, () => {
     });
     assert.equal(outcome.status, 'done', outcome.error);
     const seen = JSON.parse((outcome.result as { result: string }).result);
-    assert.deepEqual(seen.tools.sort(), ['delegate_task', 'get_agent_reports', 'get_daily_admin', 'get_events', 'list_action_proposals', 'list_agents', 'list_calendars',
-      'propose_action', 'propose_agent_change', 'read_email', 'save_email_finding', 'search_email', 'write_brief']);
+    assert.deepEqual(seen.tools.sort(), ['delegate_task', 'draft_email_reply', 'get_agent_reports', 'get_daily_admin', 'get_events', 'list_action_proposals', 'list_agents', 'list_calendars',
+      'propose_action', 'propose_agent_change', 'propose_purchase', 'read_email', 'save_email_finding', 'search_email', 'write_brief']);
     assert.equal(seen.invented.isError, true, 'the broker refuses an action without a saved finding from this run');
     assert.match(seen.invented.text, /Save this finding in this run/);
     assert.ok(!seen.envKeys.some((k: string) => k.startsWith('GOOGLE_')), 'Google credentials stay with the MCP server');

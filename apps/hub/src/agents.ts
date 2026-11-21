@@ -73,7 +73,9 @@ export interface FindingsData {
 export interface ActionProposal {
   id: number;
   finding_id: number | null;
-  kind: 'manual' | 'calendar_create';
+  kind: 'manual' | 'calendar_create' | 'email_reply' | 'purchase';
+  /** The worker agent that proposed it; null for the EA's and Bailey's own. */
+  proposed_by?: string | null;
   title: string;
   detail: string;
   revision: number;
@@ -149,7 +151,7 @@ export interface DailyPick { items: { kind: string; text: string; sub: string }[
 export type CheckinWrite = Partial<Pick<Checkin, 'mood' | 'energy' | 'note'>>;
 
 /** The workforce: agents Bailey manages that work for the EA. */
-export interface WorkerTool { label: string; detail: string; level: 'read' | 'write'; google?: boolean; requires?: string }
+export interface WorkerTool { label: string; detail: string; level: 'read' | 'write' | 'propose'; google?: boolean; requires?: string }
 export interface WorkforceAgent {
   id: number; slug: string; name: string; role: 'worker'; description: string; instructions_md: string;
   tools: string[]; enabled: boolean; created_at: string; updated_at: string;

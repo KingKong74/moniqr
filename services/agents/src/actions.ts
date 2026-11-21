@@ -84,8 +84,9 @@ export const stableJson = (value: unknown): string => {
 const reviewHash = (kind: string, title: string, detail: string, payload: unknown, source: unknown, mode: string) =>
   createHash('sha256').update(stableJson({ kind, title, detail, payload, source, execution_mode: mode })).digest('hex');
 export interface ActionRow {
-  id: number; finding_id: number | null; run_id: number; kind: Proposal['kind']; title: string; detail: string;
-  proposed_action: { instructions: string; calendar: Proposal['calendar']; target_calendar: string | null; missing_details: string[] };
+  id: number; finding_id: number | null; run_id: number; kind: Proposal['kind'] | 'email_reply' | 'purchase'; title: string; detail: string;
+  // Replies and purchases carry their own payloads (see proposals.ts); calendar fields are absent there.
+  proposed_action: { instructions: string; calendar: Proposal['calendar']; target_calendar: string | null; missing_details: string[]; [key: string]: unknown };
   source_snapshot: Record<string, any>; payload_hash: string; revision: number;
   status: 'pending' | 'approved' | 'rejected' | 'expired'; execution_status: string; execution_mode: string; origin?: 'ea' | 'owner';
   expires_at: Date | null; decided_at: Date | null; updated_at: Date;
@@ -112,7 +113,8 @@ export function actionView(row: ActionRow, findingStatus?: string, configuredTar
   const rawMissing = row.proposed_action?.missing_details;
   const missing: string[] = Array.isArray(rawMissing) ? rawMissing.filter((v): v is string => typeof v === 'string') : [];
   if (demo) missing.push('Demo request — preview only. It cannot create a Google event.');
-  else if (!row.finding_id || !row.payload_hash) missing.push('This legacy suggestion has no verified finding; it cannot be approved.');
+  // A purchase may come from no email at all; everything else must cite a verified finding.
+  else if ((!row.finding_id && row.kind !== 'purchase') || !row.payload_hash) missing.push('This legacy suggestion has no verified finding; it cannot be approved.');
   if (findingStatus === 'dismissed') missing.push('The source finding was dismissed.');
   if (row.kind === 'calendar_create') {
     if (row.execution_mode === 'enabled' && !executionEnabled) missing.push('Connect calendar write access before approval.');
@@ -206,8 +208,9 @@ export async function prepareCalendarAction(pool: Pool, id: number, revision: nu
 export async function listActions(pool: Pool, pendingOnly = false, targetCalendar?: string, executionEnabled = false) {
   return withTransaction(pool, async (client) => {
     await expire(client);
-    const { rows } = await client.query<ActionRow & { finding_status: string }>(`SELECT a.*, f.status AS finding_status
-      FROM approvals a LEFT JOIN email_findings f ON f.id=a.finding_id
+    const { rows } = await client.query<ActionRow & { finding_status: string }>(`SELECT a.*, f.status AS finding_status,
+        CASE WHEN ag.role = 'worker' THEN ag.name END AS proposed_by
+      FROM approvals a LEFT JOIN email_findings f ON f.id=a.finding_id LEFT JOIN agents ag ON ag.id=a.agent_id
       ${pendingOnly ? "WHERE a.status='pending' AND (a.source_snapshot->>'demo') IS DISTINCT FROM 'true'" : ''}
       ORDER BY (a.status='pending') DESC, a.created_at DESC, a.id DESC LIMIT ${pendingOnly ? 30 : 200}`);
     const counts = (await client.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE status='pending')::int AS pending,
@@ -220,8 +223,9 @@ export async function listActions(pool: Pool, pendingOnly = false, targetCalenda
 export async function getAction(pool: Pool, id: number, targetCalendar?: string, executionEnabled = false) {
   return withTransaction(pool, async (client) => {
     await expire(client);
-    const row = (await client.query<ActionRow & { finding_status: string }>(`SELECT a.*,f.status AS finding_status
-      FROM approvals a LEFT JOIN email_findings f ON f.id=a.finding_id WHERE a.id=$1`, [id])).rows[0];
+    const row = (await client.query<ActionRow & { finding_status: string }>(`SELECT a.*,f.status AS finding_status,
+        CASE WHEN ag.role = 'worker' THEN ag.name END AS proposed_by
+      FROM approvals a LEFT JOIN email_findings f ON f.id=a.finding_id LEFT JOIN agents ag ON ag.id=a.agent_id WHERE a.id=$1`, [id])).rows[0];
     if (!row) throw new NotFoundError('Action not found.');
     const events = (await client.query(`SELECT id,revision,event_type,actor,created_at
       FROM approval_events WHERE approval_id=$1 ORDER BY id`, [id])).rows;

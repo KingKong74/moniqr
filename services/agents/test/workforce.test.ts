@@ -279,4 +279,81 @@ describe('workforce', { skip: skipReason }, () => {
     assert.equal((await api.call('POST', `/runs/${claimed.run.id}/findings`, claimed.runToken, { ...finding, message_id: 'msg-clerk-2' })).status, 401);
     await cleanup(claimed.run.id);
   });
+
+  test('proposals: a granted worker drafts replies and suggests purchases that wait for Bailey and never execute', async () => {
+    assert.equal((await api.call('POST', '/workforce/agents', API_TOKEN, { ...researcher, slug: 'helper2', name: 'Helper', tools: ['read_email', 'draft_email_reply'] })).status, 400,
+      'drafting needs saving findings');
+    const created = await api.call('POST', '/workforce/agents', API_TOKEN, { ...researcher, slug: 'concierge', name: 'Concierge',
+      tools: ['draft_email_reply', 'propose_purchase', 'read_email', 'save_email_finding'] });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    await api.call('POST', '/workforce/agents/concierge/tasks', API_TOKEN, { task: 'Handle the plumber email' });
+    const claimed = (await claimNextRun(pool, 60_000))!;
+    const call = (path: string, body: unknown) => api.call('POST', `/runs/${claimed.run.id}/${path}`, claimed.runToken, body);
+    const finding = await call('findings', {
+      message_id: 'msg-plumber', thread_id: 'thr-plumber', category: 'reply', sender: '"Joe Plumbing" <joe@example.com>', subject: 'Can we come Tuesday?',
+      received_at: '2026-11-20T09:00:00+10:00', summary: 'Plumber asks to come Tuesday 9am', evidence: 'Can we come Tuesday at 9am?',
+    });
+    assert.equal(finding.status, 201);
+    const fid = finding.body.finding.id;
+
+    const draft = await call('proposals', { kind: 'email_reply', finding_id: fid, body: 'Tuesday 9am works. Thanks, Bailey', note: 'Check you are home Tuesday.',
+      to: 'attacker@evil.example' });
+    assert.equal(draft.status, 400, 'the agent cannot choose the recipient');
+    const ok = await call('proposals', { kind: 'email_reply', finding_id: fid, body: 'Tuesday 9am works. Thanks, Bailey', note: 'Check you are home Tuesday.' });
+    assert.equal(ok.status, 201, JSON.stringify(ok.body));
+    const reply = ok.body.action;
+    assert.equal(reply.kind, 'email_reply');
+    assert.equal(reply.title, 'Reply to Joe Plumbing');
+    assert.deepEqual(reply.proposed_action, { to: '"Joe Plumbing" <joe@example.com>', subject: 'Re: Can we come Tuesday?', body: 'Tuesday 9am works. Thanks, Bailey', note: 'Check you are home Tuesday.' });
+    assert.equal(reply.execution_mode, 'record_only');
+    assert.equal(reply.can_approve, true);
+    // A second draft revises the pending one rather than adding another.
+    const revised = await call('proposals', { kind: 'email_reply', finding_id: fid, body: 'Tuesday 9am is fine.' });
+    assert.equal(revised.body.action.id, reply.id);
+    assert.equal(revised.body.action.revision, 2);
+
+    for (const bad of [
+      { kind: 'purchase', item: 'Filter', merchant: 'Bunnings', url: 'http://bunnings.com.au/x', price: 20, reason: 'x' },
+      { kind: 'purchase', item: 'Filter', merchant: 'Bunnings', url: 'https://user:pw@bunnings.com.au/x', price: 20, reason: 'x' },
+      { kind: 'purchase', item: 'TV', merchant: 'JB', url: 'https://jbhifi.com.au/tv', price: 9000, reason: 'x' },
+    ]) assert.equal((await call('proposals', bad)).status, 400, JSON.stringify(bad));
+    const buy = await call('proposals', { kind: 'purchase', item: 'Tap washer kit', merchant: 'Bunnings', url: 'https://www.bunnings.com.au/tap-washers', price: 12.5, quantity: 2, reason: 'The plumber said to have spares.' });
+    assert.equal(buy.status, 201, JSON.stringify(buy.body));
+    assert.equal(buy.body.action.title, 'Buy 2 × Tap washer kit');
+    assert.equal(buy.body.action.proposed_action.domain, 'bunnings.com.au');
+    assert.equal(buy.body.action.proposed_action.total, 25);
+    assert.equal(buy.body.action.can_approve, true, 'a purchase needs no finding');
+    assert.equal((await call('proposals', { kind: 'purchase', item: 'Tap washer kit', merchant: 'Bunnings', url: 'https://www.bunnings.com.au/tap-washers', price: 12.5, quantity: 2, reason: 'again' })).body.action.id,
+      buy.body.action.id, 'the same pending item is not suggested twice');
+    for (const i of [1, 2]) assert.equal((await call('proposals', { kind: 'purchase', item: `Thing ${i}`, merchant: 'Shop', url: `https://shop.example/${i}`, price: 5, reason: 'x' })).status, 201);
+    assert.equal((await call('proposals', { kind: 'purchase', item: 'Thing 4', merchant: 'Shop', url: 'https://shop.example/4', price: 5, reason: 'x' })).status, 409, 'three per run');
+
+    const list = await api.call('GET', '/actions', API_TOKEN);
+    const mine = list.body.items.filter((a: any) => a.proposed_by === 'Concierge');
+    assert.equal(mine.length, 4);
+    // Approving records the decision only; nothing can execute it.
+    const decided = await api.call('POST', `/actions/${buy.body.action.id}/decision`, API_TOKEN, { decision: 'approved', revision: 1 });
+    assert.equal(decided.status, 200, JSON.stringify(decided.body));
+    assert.equal(decided.body.action.execution_status, 'not_requested');
+    assert.equal(decided.body.action.can_execute, false);
+    assert.equal((await api.call('POST', `/actions/${buy.body.action.id}/execute`, API_TOKEN, { revision: 1 })).status >= 400, true);
+
+    // Without the grant, the same token is refused.
+    await api.call('PATCH', '/workforce/agents/concierge', API_TOKEN, { tools: ['read_email', 'save_email_finding'] });
+    assert.equal((await call('proposals', { kind: 'purchase', item: 'More', merchant: 'Shop', url: 'https://shop.example/5', price: 5, reason: 'x' })).status, 401);
+    assert.equal((await call('proposals', { kind: 'email_reply', finding_id: fid, body: 'x' })).status, 401);
+    await cleanup(claimed.run.id);
+  });
+
+  test('the console cannot draft or suggest, and the EA can', async () => {
+    const chat = (await eaRun('chat'))!;
+    assert.equal((await api.call('POST', `/runs/${chat.run.id}/proposals`, chat.runToken,
+      { kind: 'purchase', item: 'x', merchant: 'x', url: 'https://x.example/', price: 1, reason: 'x' })).status, 401);
+    await cleanup(chat.run.id);
+    const ea = (await eaRun())!;
+    const r = await api.call('POST', `/runs/${ea.run.id}/proposals`, ea.runToken, { kind: 'purchase', item: 'Printer ink', merchant: 'Officeworks', url: 'https://www.officeworks.com.au/ink', price: 39, reason: 'Low ink warning email' });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.action.origin, 'ea');
+    await cleanup(ea.run.id);
+  });
 });

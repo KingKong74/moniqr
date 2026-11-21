@@ -3,7 +3,7 @@ import { withTransaction } from './db.js';
 import { hashToken, newToken, safeEqual } from './tokens.js';
 
 /** The only writes a worker can be granted: moniqr's own records, never the EA's briefs, proposals or outward actions. */
-const WORKER_WRITES = new Set(['save_email_finding']);
+const WORKER_WRITES = new Set(['save_email_finding', 'draft_email_reply', 'propose_purchase']);
 
 export type Trigger = 'schedule' | 'manual' | 'inbox' | 'delegated';
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed';

@@ -16,7 +16,8 @@ import { minGapMinutes, nextFireAfter } from './scheduler.js';
 
 /**
  * Everything a worker could be given. Reads look at data; writes change only moniqr's own records
- * (level 2 in docs/workforce-permissions.md). Nothing here sends, pays, books or deletes.
+ * (level 2 in docs/workforce-permissions.md); proposals wait in the Inbox for Bailey to carry out
+ * himself (level 3). Nothing here sends, pays, books or deletes.
  */
 export const WORKER_TOOLS = {
   get_daily_admin: { label: 'Daily admin', detail: 'Open email findings, pending decisions, outcomes and the personal backlog', level: 'read' },
@@ -25,7 +26,9 @@ export const WORKER_TOOLS = {
   search_email: { label: 'Email search', detail: 'Search Gmail (spam and trash left out)', level: 'read', google: true },
   read_email: { label: 'Email read', detail: 'Read one email found by a search', level: 'read', google: true },
   save_email_finding: { label: 'Save email findings', detail: 'Add bills, deadlines and replies it reads to your Inbox for review', level: 'write', google: true, requires: 'read_email' },
-} as const satisfies Record<string, { label: string; detail: string; level: 'read' | 'write'; google?: boolean; requires?: string }>;
+  draft_email_reply: { label: 'Draft email replies', detail: 'Write a reply to an email it saved as a finding. You send it yourself', level: 'propose', google: true, requires: 'save_email_finding' },
+  propose_purchase: { label: 'Suggest purchases', detail: 'Suggest something to buy, with the shop, price and link. You buy it yourself', level: 'propose' },
+} as const satisfies Record<string, { label: string; detail: string; level: 'read' | 'write' | 'propose'; google?: boolean; requires?: string }>;
 export type WorkerTool = keyof typeof WORKER_TOOLS;
 const WORKER_TOOL_NAMES = Object.keys(WORKER_TOOLS) as [WorkerTool, ...WorkerTool[]];
 export const isGoogleTool = (t: string) => Boolean((WORKER_TOOLS as Record<string, { google?: boolean }>)[t]?.google);

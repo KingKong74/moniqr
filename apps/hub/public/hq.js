@@ -107,6 +107,7 @@ const BNE_MS = 10 * 3_600_000;
 const checkinSlot = (ms) => ({ day: Math.floor((ms + BNE_MS) / 86_400_000), pm: new Date(ms + BNE_MS).getUTCHours() >= 15 });
 const brisbaneClock = (ms) => { const d = new Date(ms + BNE_MS); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
 const ENERGY = ['Drained', 'Low', 'Steady', 'High', 'Wired'];
+const KIND_LABEL = { manual: 'Manual step', calendar_create: 'Calendar proposal', email_reply: 'Reply draft', purchase: 'Purchase' };
 const FOCUS_IDS = ['pri', 'news', 'mood', 'pick'];
 const FOCUS_LABELS = { pri: 'priorities', news: 'news', mood: 'mood', pick: 'daily pick' };
 
@@ -882,7 +883,9 @@ class App extends Component {
       }
       const result = r.status === 204 ? null : (await r.json()).action;
       this.applyActionResult(result, decision === 'approved' && result?.execution_mode === 'enabled' ? this.calendarResult(result) : decision === 'approved'
-        ? `Approval recorded for “${action.title}” (revision ${action.revision}). Nothing was executed or queued; manual steps are yours to carry out.`
+        ? `Approval recorded for “${action.title}” (revision ${action.revision}). ${action.kind === 'email_reply' ? 'Nothing was sent; copy the reply into Gmail when you’re ready.'
+          : action.kind === 'purchase' ? 'Nothing was bought; open the link and buy it yourself when you’re ready.'
+          : 'Nothing was executed or queued; manual steps are yours to carry out.'}`
         : `Rejection recorded for “${action.title}” (revision ${action.revision}). No external action was taken.`);
     } catch (err) { this.setState({ actionError: err.message }); }
     finally { await this.load(); this.setState({ actionSaving: false }); }
@@ -896,6 +899,36 @@ class App extends Component {
       const d = await r.json();
       this.setState({ actionHistory: { id, revision: d.action.revision, events: d.events } });
     } catch (err) { this.setState({ actionError: err.message }); }
+  }
+
+  /** A reply draft: moniqr chose the recipient and subject from the email; the agent wrote only the body. */
+  renderReplyDraft(a) {
+    const p = a.proposed_action ?? {};
+    const thread = a.source_snapshot?.thread_id;
+    const copied = this.state.copiedDraft === a.id && this.state.copiedRevision === a.revision;
+    return html`<div class="col prop-draft" style="gap: 8px;">
+      <div class="col fs13 soft" style="overflow-wrap: anywhere;"><span>To: ${p.to}</span><span>Subject: ${p.subject}</span></div>
+      <pre class="prop-body">${p.body}</pre>
+      <p class="fs12 muted">Written by an agent that read the email. Read it through before you send it.</p>
+      <div class="row wrap">
+        <button class="btn btn-secondary sm" onClick=${() => navigator.clipboard?.writeText(p.body).then(() => this.setState({ copiedDraft: a.id, copiedRevision: a.revision }))}>${copied ? 'Copied' : 'Copy reply'}</button>
+        ${thread && html`<a class="btn btn-ghost sm" href=${`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(thread)}`} target="_blank" rel="noopener noreferrer">Open the thread in Gmail ↗</a>`}
+      </div>
+    </div>`;
+  }
+
+  /** A purchase suggestion: the shop's domain is shown plainly, because the link was written by an agent. */
+  renderPurchase(a) {
+    const p = a.proposed_action ?? {};
+    const money = (n) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: p.currency || 'AUD' }).format(n ?? 0);
+    const safe = typeof p.url === 'string' && p.url.startsWith('https://');
+    return html`<div class="col fs13 soft" style="gap: 6px; overflow-wrap: anywhere;">
+      <span>Item: ${p.item}</span><span>Shop: ${p.merchant}</span>
+      <span>Price: ${money(p.price)}${p.quantity > 1 ? ` × ${p.quantity} = ${money(p.total)}` : ''}</span>
+      <span>Link goes to <strong>${p.domain}</strong></span>
+      <p class="fs12 muted">Check this is the shop you expect before you pay. The link was written by an agent, and it may have come from an email.</p>
+      ${safe && html`<a class="btn btn-ghost sm" style="align-self: flex-start;" href=${p.url} target="_blank" rel="noopener noreferrer nofollow">Open ${p.domain} ↗</a>`}
+    </div>`;
   }
 
   renderActions() {
@@ -914,7 +947,7 @@ class App extends Component {
     return html`<section id="actions" class="col" style="gap: 12px;">
       <div class="between wrap" style="gap: 12px;"><h2 style="font-size: 20px;">Proposals ${src('actions', this.state.data.actionsError && 'Down')}</h2>
         <span class="fs13 muted">${data.actionsError ? 'Unavailable' : `${actions.pending - (actions.demo_pending ?? 0)} awaiting review${actions.demo_pending ? ` · ${actions.demo_pending} demo requests` : ''}`}</span></div>
-      <p class="fs12 muted">Only calendar proposals labelled “Creates an event after approval” can write to your main calendar. Manual plans and earlier record-only decisions never execute.</p>
+      <p class="fs12 muted">Only calendar proposals labelled “Creates an event after approval” can write to your main calendar. Manual plans, reply drafts, purchase suggestions and earlier record-only decisions never execute: moniqr does not send email or pay for anything.</p>
       ${!actions.calendar_write_ready && html`<p class="fs13 dim">Calendar creation needs Google write permission. You can still review requests and see their overlay.</p>`}
       ${data.actionsError && html`<p class="fs13 coral" role="alert">Proposals could not load. Retrying automatically.</p>`}
       ${actionError && html`<p class="fs13 coral" role="alert">${actionError}</p>`}
@@ -931,7 +964,7 @@ class App extends Component {
             ${shown.map((x) => html`<button class=${`mail finding-row${x.id === a.id ? ' sel' : ''}`} key=${x.id}
               aria-pressed=${x.id === a.id} onClick=${() => this.setState({ actionSel: x.id, actionHistory: null, actionError: '' })}>
               <span class="dot" style=${`background: ${x.status === 'pending' ? 'var(--accent-2)' : 'transparent'};`}></span>
-              <span class="col" style="gap: 4px; min-width: 0;"><span class="fs12 muted">${x.kind === 'manual' ? 'Manual step' : 'Calendar proposal'} · ${labels[x.status]}</span>
+              <span class="col" style="gap: 4px; min-width: 0;"><span class="fs12 muted">${KIND_LABEL[x.kind] ?? 'Proposal'} · ${labels[x.status]}${x.proposed_by ? ` · ${x.proposed_by}` : ''}</span>
                 <span class="fs14 text ellipsis">${x.title}</span><span class="fs13 muted ellipsis">${x.detail}</span></span>
             </button>`)}
           </div>
@@ -939,7 +972,8 @@ class App extends Component {
             <span class="fs12 steel">${labels[a.status]} · Revision ${a.revision}</span>
             ${a.source_snapshot?.demo && html`<span class="fs13 steel">Demo · Preview only · Never sent to Google</span>`}
             <h3>${a.title}</h3><p class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${a.detail}</p>
-            ${a.kind === 'manual' ? html`<div class="col"><span class="fs12 muted">For you to do yourself</span>
+            ${a.proposed_by && html`<span class="fs12 muted">Proposed by ${a.proposed_by}, one of your agents</span>`}
+            ${a.kind === 'email_reply' ? this.renderReplyDraft(a) : a.kind === 'purchase' ? this.renderPurchase(a) : a.kind === 'manual' ? html`<div class="col"><span class="fs12 muted">For you to do yourself</span>
               <p class="fs14 text" style="white-space: pre-wrap; overflow-wrap: anywhere;">${payload?.instructions || 'No structured instructions recorded.'}</p></div>` : html`
               <div class="col fs13 soft" style="overflow-wrap: anywhere;">
                 <span>Event: ${payload?.calendar?.title || 'Not specified'}</span>
@@ -948,7 +982,7 @@ class App extends Component {
                 <span>Target calendar: ${payload?.target_calendar || 'Not selected'}</span>
                 ${payload?.calendar?.location && html`<span>Location: ${payload.calendar.location}</span>`}
               </div>`}
-            <div class="col fs12 muted" style="overflow-wrap: anywhere;"><span>Source: ${source.subject || 'Legacy suggestion; source not recorded'}</span>
+            <div class="col fs12 muted" style="overflow-wrap: anywhere;"><span>Source: ${source.subject || (a.kind === 'purchase' ? 'Not from an email' : 'Legacy suggestion; source not recorded')}</span>
               ${source.sender && html`<span>Sender as shown: ${source.sender}</span>`}</div>
             ${source.evidence && html`<blockquote class="fs14 soft" style="white-space: pre-wrap; overflow-wrap: anywhere;">${source.evidence}</blockquote>`}
             ${source.deadline_text && html`<p class="fs13 dim">Date/time as stated: ${source.deadline_text}</p>`}
@@ -956,11 +990,15 @@ class App extends Component {
             ${a.blocked_reasons.length > 0 && html`<div class="col"><span class="fs12 muted">Needs clarification before approval</span>
               <ul class="fs13 soft">${a.blocked_reasons.map((reason) => html`<li>${reason}</li>`)}</ul></div>`}
             <span class="fs12 muted">Expires: ${when(a.expires_at)}</span>
-            <span class="fs13 steel">${a.execution_mode === 'enabled' ? 'Creates an event after approval' : 'Record-only decision · Does not create an event'}</span>
+            <span class="fs13 steel">${a.execution_mode === 'enabled' ? 'Creates an event after approval'
+              : a.kind === 'email_reply' ? 'You send it yourself · moniqr never sends email'
+              : a.kind === 'purchase' ? 'You buy it yourself · moniqr never pays for anything'
+              : 'Record-only decision · Does not create an event'}</span>
             ${a.execution_error && html`<p class="fs13 coral" role="status">${a.execution_error}</p>`}
             ${a.decided_at && html`<span class="fs12 muted">Decision recorded: ${when(a.decided_at)}</span>`}
             ${a.status === 'pending' && html`<div class="row wrap">
-              ${!a.source_snapshot?.demo && html`<button class="btn btn-primary" disabled=${actionSaving || !a.can_approve} onClick=${() => this.decideProposal(a, 'approved')}>${a.execution_mode === 'enabled' ? 'Approve and create event' : 'Approve proposal'}</button>`}
+              ${!a.source_snapshot?.demo && html`<button class="btn btn-primary" disabled=${actionSaving || !a.can_approve} onClick=${() => this.decideProposal(a, 'approved')}>${a.execution_mode === 'enabled' ? 'Approve and create event'
+                : a.kind === 'email_reply' ? 'Approve: I’ll send it' : a.kind === 'purchase' ? 'Approve: I’ll buy it' : 'Approve proposal'}</button>`}
               <button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.decideProposal(a, 'rejected')}>${a.source_snapshot?.demo ? 'Dismiss demo' : 'Reject proposal'}</button>
             </div>`}
             ${a.can_prepare && html`<button class="btn btn-secondary" disabled=${actionSaving} onClick=${() => this.calendarOperation(a, 'prepare')}>Enable creation and review again</button>`}

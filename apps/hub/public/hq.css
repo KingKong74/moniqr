@@ -1007,3 +1007,4 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
 :root:not([data-theme="dark"]) :is(.deadline, .forgot, .bf-ev.c1) { background: #f9dbe6; }
 :root:not([data-theme="dark"]) .bf-ev.c2 { background: #f6dccd; }
 :root:not([data-theme="dark"]) :is(.composer, .up-next, .search input, .journal, .filters, .reader, .cal-add, .cal-field input) { background: #e6e8f0; }
+.prop-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; line-height: 1.55; color: var(--n100); background: var(--wash-4); border-radius: 10px; padding: 12px 14px; margin: 0; }

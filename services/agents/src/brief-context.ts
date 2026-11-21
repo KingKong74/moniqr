@@ -13,6 +13,8 @@ const gmailLink = (threadId: string) => `https://mail.google.com/mail/u/0/#all/$
 
 /** What a confirmed or unconfirmed execution state means, in words the brief can repeat. */
 export function outcomeMeaning(kind: string, mode: string, status: string, execution: string): string {
+  if (kind === 'email_reply') return `Reply draft ${status}; moniqr never sends email, so this is not evidence Bailey sent it.`;
+  if (kind === 'purchase') return `Purchase suggestion ${status}; moniqr never pays for anything, so this is not evidence Bailey bought it.`;
   if (kind !== 'calendar_create') return `Manual step ${status}; moniqr does not carry out manual steps, so this is not evidence it was done.`;
   switch (execution) {
     case 'succeeded': return 'Confirmed: moniqr created this event in Google Calendar.';
