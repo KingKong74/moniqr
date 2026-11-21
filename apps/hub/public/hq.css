@@ -6,10 +6,10 @@
 :root {
   --n100: #12132a; --n200: #212239; --n300: #36374f; --n400: #4b4c65; --n500: #62637c;
   --n600: #85869e; --n700: #b4b6c9; --n800: #d1d3e0; --n900: #eef0f5;
-  --accent: #ee8455;
-  --a200: #873f20; --a300: #ad5229; --a400: #ad5229;
-  --a600: #e2703f; --a700: #c85a2b; --a800: #873f20;
-  --on-accent: #2b1a12;
+  --accent: #ba7517;
+  --a200: #6b410a; --a300: #94600f; --a400: #94600f;
+  --a600: #a6680f; --a700: #8f570c; --a800: #6b410a;
+  --on-accent: #ffffff;
   --accent-2: #c2416e;
   --bg: #eef0f5;
   --surface: #ffffff;
@@ -19,7 +19,7 @@
   --wash-4: rgb(18 19 42 / 0.05);
   --wash-6: rgb(18 19 42 / 0.08);
   --wash-8: rgb(18 19 42 / 0.11);
-  --nav-bg: #0f0e0d;
+  --nav-bg: #1d1b19;
   --shadow: rgb(18 19 42 / 0.16);
   --font-body: "Barlow", system-ui, sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -134,12 +134,12 @@ input::placeholder { color: var(--n500); }
 
 /* — shell — */
 .shell { min-height: 100vh; display: flex; }
-/* The sidebar: near-black (#0F0E0D) with warm cream text and the peach accent in light mode,
+/* The sidebar: warm charcoal with cream text, warm grey (#B3ABA0) secondary text and amber accent text in light mode,
    indigo night in dark mode. */
 .nav { width: 216px; flex-shrink: 0; display: flex; flex-direction: column; gap: 28px; padding: 22px 14px; color: var(--n200);
   background: var(--nav-bg); box-shadow: none;
-  --n100: #fffcf8; --n200: rgb(255 252 248 / 0.88); --n300: rgb(255 252 248 / 0.8); --n400: rgb(255 252 248 / 0.68); --n500: rgb(255 252 248 / 0.52); --n600: rgb(255 252 248 / 0.34);
-  --wash-6: rgb(255 252 248 / 0.07); --wash-8: rgb(255 252 248 / 0.13); --live: oklch(0.78 0.14 150); }
+  --n100: #fffcf8; --n200: rgb(255 252 248 / 0.88); --n300: rgb(255 252 248 / 0.8); --n400: #b3aba0; --n500: rgb(179 171 160 / 0.78); --n600: rgb(179 171 160 / 0.5);
+  --wash-6: rgb(255 252 248 / 0.07); --wash-8: rgb(255 252 248 / 0.13); --accent: #e2a048; --a300: #e2a048; --live: oklch(0.78 0.14 150); }
 :root[data-theme="dark"] .nav { background: var(--nav-bg); box-shadow: none;
   --n100: #fffcf8; --n200: rgb(255 252 248 / 0.86); --n300: rgb(255 252 248 / 0.78); --n400: rgb(255 252 248 / 0.64); --n500: rgb(255 252 248 / 0.5); --n600: rgb(255 252 248 / 0.32);
   --wash-6: rgb(255 252 248 / 0.06); --wash-8: rgb(255 252 248 / 0.12); --live: oklch(0.78 0.14 150); }
@@ -306,7 +306,7 @@ html.cal-full-open, html.cal-full-open body { overflow: hidden; }
 /* — The moniqr console (console.js): right-click menu and a terminal-styled session. The panel is
    indigo night in both themes, like the sidebar; the prompt takes the theme's action colour. — */
 :root { --mq-bg: #1d1e3d; --mq-bar: #17183a; --mq-line: rgb(238 238 250 / 0.1); --mq-text: #e6e5f5; --mq-dim: #9a99b8;
-  --mq-accent: #f29a72; --mq-error: #ff8fae; --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  --mq-accent: #e2a048; --mq-error: #ff8fae; --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 :root[data-theme="dark"] { --mq-bg: #0a0b1a; --mq-bar: #111230; --mq-accent: #a39eff; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme]) { --mq-bg: #0a0b1a; --mq-bar: #111230; --mq-accent: #a39eff; } }
 
@@ -443,10 +443,10 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
   --next: #f29a72; --done: #b0a6d0; --done-ok: oklch(0.72 0.14 150); --redact: rgb(246 242 255 / .18); --field: rgb(255 255 255 / .06); }
 :root:not([data-theme="dark"]) .home {
   --top: #ffffff; --top-soft: rgb(255 255 255 / .88); --pill: rgb(255 255 255 / .14); --pill-line: rgb(255 255 255 / .28); --pill-on: rgb(255 255 255 / .28); --sign-line: rgb(255 255 255 / .6);
-  --cta: #ffffff; --cta-text: #b8401f; --cta-shadow: rgb(150 50 20 / .4);
+  --cta: #ffffff; --cta-text: #8f570c; --cta-shadow: rgb(150 50 20 / .4);
   --card: rgb(255 255 255 / .8); --card-line: rgb(255 255 255 / .7); --label-shadow: rgb(90 30 20 / .55); --badge-ring: #ffffff;
   --ink: #1c1d2e; --body: #43445a; --meta: #64657c; --accent-dot: #c2416e; --panel: rgb(255 255 255 / .95); --soft-btn: rgb(28 29 46 / .07); --row-line: rgb(28 29 46 / .09);
-  --next: #c2410c; --done: #64657c; --done-ok: oklch(0.55 0.15 150); --redact: rgb(28 29 46 / .14); --field: rgb(28 29 46 / .04); }
+  --next: #94600f; --done: #64657c; --done-ok: oklch(0.55 0.15 150); --redact: rgb(28 29 46 / .14); --field: rgb(28 29 46 / .04); }
 .home a { color: inherit; }
 .home-bg { position: absolute; inset: 0; overflow: hidden; transition: opacity 700ms var(--ease); }
 .home-bg.silk { background: linear-gradient(165deg, #120c2e 0%, #24185a 35%, #3a2580 55%, #1c1446 80%, #0e0a26 100%); opacity: 0; }
@@ -998,9 +998,9 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
    white tiles with an orange top edge; selected rows and small tags take a solid light peach. */
 :root:not([data-theme="dark"]) :is(.decision, .fcard.pick, .plan, .bl-sug, .bf-next, .dashboard-resume) {
   background: var(--tile); border: 1px solid var(--tile-line); box-shadow: inset 0 3px 0 var(--accent), 0 1px 2px var(--wash-6); }
-:root:not([data-theme="dark"]) :is(.mail.sel, .mail.sel:hover, .bl-row.sel, .bl-status, .bl-tone.tidy, .bl-filter-chip, .bl-health-cells button[aria-pressed="true"], .btn-ghost:hover, .wf-tool-write) { background: #fde2d4; }
-:root:not([data-theme="dark"]) .bf-open { background: linear-gradient(90deg, #fde2d4, transparent); }
+:root:not([data-theme="dark"]) :is(.mail.sel, .mail.sel:hover, .bl-row.sel, .bl-status, .bl-tone.tidy, .bl-filter-chip, .bl-health-cells button[aria-pressed="true"], .btn-ghost:hover, .wf-tool-write) { background: #f6e7cf; }
+:root:not([data-theme="dark"]) .bf-open { background: linear-gradient(90deg, #f6e7cf, transparent); }
 :root:not([data-theme="dark"]) :is(.deadline, .forgot, .bf-ev.c1) { background: #f9dbe6; }
-:root:not([data-theme="dark"]) .bf-ev.c2 { background: #f6dccd; }
+:root:not([data-theme="dark"]) .bf-ev.c2 { background: #f3e3c8; }
 :root:not([data-theme="dark"]) :is(.composer, .search input, .journal, .filters, .reader, .cal-add, .cal-field input) { background: #e6e8f0; }
 .prop-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; line-height: 1.55; color: var(--n100); background: var(--wash-4); border-radius: 10px; padding: 12px 14px; margin: 0; }

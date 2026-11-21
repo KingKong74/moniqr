@@ -2,15 +2,15 @@
    indigo night and violet in dark mode, following the device setting. */
 :root {
   --bg: #eef0f5;
-  --glow: rgb(242 154 114 / 0.28);
+  --glow: rgb(186 117 23 / 0.22);
   --glow-2: rgb(227 51 140 / 0.12);
   --card: #ffffff;
   --line: #d8dae6;
   --fg-1: #12132a; --fg-2: #36374f; --fg-3: #4b4c65; --fg-4: #62637c;
-  --focus: #f7b393;
-  --action: #ee8455; --action-hover: #e2703f; --on-action: #2b1a12;
+  --focus: #e2a048;
+  --action: #ba7517; --action-hover: #a6680f; --on-action: #ffffff;
   --error-fg: #9c2d55; --error-bg: #f9e0e8; --error-line: rgb(194 65 110 / 0.35);
-  --info-bg: #fff4ee; --info-line: #fcd0b8;
+  --info-bg: #fbf3e6; --info-line: #ecd3a8;
   --shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 24px 60px -28px rgb(28 29 46 / 0.3);
   --font: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
