@@ -1,17 +1,17 @@
-/* The moniqr sign-in page, on the moniqr design system: cream and peach in light mode,
+/* The moniqr sign-in page, on the moniqr design system: cool white and peach in light mode,
    indigo night and violet in dark mode, following the device setting. */
 :root {
-  --bg: #faf6f0;
+  --bg: #f5f6fa;
   --glow: rgb(242 154 114 / 0.28);
   --glow-2: rgb(227 51 140 / 0.12);
-  --card: #fffcf8;
-  --line: #ebe3d7;
-  --fg-1: #251f1b; --fg-2: #48413a; --fg-3: #625a51; --fg-4: #7e756b;
+  --card: #ffffff;
+  --line: #e4e5ee;
+  --fg-1: #1c1d2e; --fg-2: #43445a; --fg-3: #5c5d74; --fg-4: #75768d;
   --focus: #f7b393;
   --action: #f29a72; --action-hover: #ea8456; --on-action: #2b1a12;
   --error-fg: #9c2d55; --error-bg: #f9e0e8; --error-line: rgb(194 65 110 / 0.35);
   --info-bg: #fff4ee; --info-line: #fcd0b8;
-  --shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 24px 60px -28px rgb(37 31 27 / 0.35);
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 24px 60px -28px rgb(28 29 46 / 0.3);
   --font: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
 }

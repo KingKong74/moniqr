@@ -1,26 +1,26 @@
-/* moniqr, on the moniqr design system. Light: cream and paper with a peach action colour.
+/* moniqr, on the moniqr design system. Light: cool white and soft grey with a peach action colour.
    Dark: deep indigo night with a violet action colour. The sidebar is indigo night in both.
    The n-scale runs from strongest text (n100) to the page background (n900), so the same
    rules read correctly in either theme. hq.js sets data-theme on <html>; before it loads the
    device setting decides. */
 :root {
-  --n100: #251f1b; --n200: #342f2b; --n300: #48413a; --n400: #625a51; --n500: #7e756b;
-  --n600: #9c9389; --n700: #c7baa6; --n800: #ddd2c2; --n900: #faf6f0;
+  --n100: #1c1d2e; --n200: #2b2c40; --n300: #43445a; --n400: #5c5d74; --n500: #75768d;
+  --n600: #9798ad; --n700: #c3c4d4; --n800: #dcdde8; --n900: #f5f6fa;
   --accent: #f29a72;
   --a200: #873f20; --a300: #ad5229; --a400: #ad5229;
   --a600: #ea8456; --a700: #d26a3c; --a800: #873f20;
   --on-accent: #2b1a12;
   --accent-2: #c2416e;
-  --bg: #faf6f0;
-  --surface: #fffcf8;
-  --tile: #fffcf8;
-  --tile-line: #ebe3d7;
-  --divider: #ebe3d7;
-  --wash-4: rgb(37 31 27 / 0.04);
-  --wash-6: rgb(37 31 27 / 0.06);
-  --wash-8: rgb(37 31 27 / 0.08);
-  --nav-bg: #f0dcc6;
-  --shadow: rgb(37 31 27 / 0.14);
+  --bg: #f5f6fa;
+  --surface: #ffffff;
+  --tile: #ffffff;
+  --tile-line: #e4e5ee;
+  --divider: #e4e5ee;
+  --wash-4: rgb(28 29 46 / 0.04);
+  --wash-6: rgb(28 29 46 / 0.06);
+  --wash-8: rgb(28 29 46 / 0.08);
+  --nav-bg: #ecedf6;
+  --shadow: rgb(28 29 46 / 0.12);
   --font-body: "Barlow", system-ui, sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --live: oklch(0.52 0.14 150);
@@ -134,11 +134,11 @@ input::placeholder { color: var(--n500); }
 
 /* — shell — */
 .shell { min-height: 100vh; display: flex; }
-/* The sidebar: soft sand and terracotta with brown text in light mode, indigo night in dark mode. */
+/* The sidebar: pale cool grey with deep indigo text in light mode, indigo night in dark mode. */
 .nav { width: 216px; flex-shrink: 0; display: flex; flex-direction: column; gap: 28px; padding: 22px 14px; color: var(--n200);
-  background: linear-gradient(180deg, #f3e2cf 0%, var(--nav-bg) 55%, #ebcfb4 100%); box-shadow: inset -1px 0 0 rgb(135 63 32 / 0.1);
-  --n100: #3b2417; --n200: rgb(59 36 23 / 0.88); --n300: rgb(59 36 23 / 0.78); --n400: rgb(78 46 28 / 0.72); --n500: rgb(78 46 28 / 0.58); --n600: rgb(135 63 32 / 0.38);
-  --wash-6: rgb(173 82 41 / 0.08); --wash-8: rgb(173 82 41 / 0.15); }
+  background: linear-gradient(180deg, #f3f4f9 0%, var(--nav-bg) 55%, #e5e6f2 100%); box-shadow: inset -1px 0 0 rgb(28 29 46 / 0.08);
+  --n100: #1d1e3d; --n200: rgb(29 30 61 / 0.88); --n300: rgb(29 30 61 / 0.78); --n400: rgb(29 30 61 / 0.68); --n500: rgb(29 30 61 / 0.55); --n600: rgb(29 30 61 / 0.36);
+  --wash-6: rgb(29 30 61 / 0.06); --wash-8: rgb(29 30 61 / 0.1); }
 :root[data-theme="dark"] .nav { background: var(--nav-bg); box-shadow: none;
   --n100: #fffcf8; --n200: rgb(255 252 248 / 0.86); --n300: rgb(255 252 248 / 0.78); --n400: rgb(255 252 248 / 0.64); --n500: rgb(255 252 248 / 0.5); --n600: rgb(255 252 248 / 0.32);
   --wash-6: rgb(255 252 248 / 0.06); --wash-8: rgb(255 252 248 / 0.12); --live: oklch(0.78 0.14 150); }
@@ -430,10 +430,10 @@ button.nav-item:hover:not(:disabled) { background: var(--wash-6); }
   --next: #f29a72; --done: #b0a6d0; --done-ok: oklch(0.72 0.14 150); --redact: rgb(246 242 255 / .18); --field: rgb(255 255 255 / .06); }
 :root:not([data-theme="dark"]) .home {
   --top: #ffffff; --top-soft: rgb(255 255 255 / .88); --pill: rgb(255 255 255 / .14); --pill-line: rgb(255 255 255 / .28); --pill-on: rgb(255 255 255 / .28); --sign-line: rgb(255 255 255 / .6);
-  --cta: #fffcf8; --cta-text: #b8401f; --cta-shadow: rgb(150 50 20 / .4);
-  --card: rgb(255 252 248 / .8); --card-line: rgb(255 255 255 / .7); --label-shadow: rgb(90 30 20 / .55); --badge-ring: #fffcf8;
-  --ink: #251f1b; --body: #48413a; --meta: #6f665c; --accent-dot: #c2416e; --panel: rgb(255 252 248 / .95); --soft-btn: rgb(37 31 27 / .07); --row-line: rgb(37 31 27 / .09);
-  --next: #c2410c; --done: #6f665c; --done-ok: oklch(0.55 0.15 150); --redact: rgb(37 31 27 / .14); --field: rgb(37 31 27 / .04); }
+  --cta: #ffffff; --cta-text: #b8401f; --cta-shadow: rgb(150 50 20 / .4);
+  --card: rgb(255 255 255 / .8); --card-line: rgb(255 255 255 / .7); --label-shadow: rgb(90 30 20 / .55); --badge-ring: #ffffff;
+  --ink: #1c1d2e; --body: #43445a; --meta: #64657c; --accent-dot: #c2416e; --panel: rgb(255 255 255 / .95); --soft-btn: rgb(28 29 46 / .07); --row-line: rgb(28 29 46 / .09);
+  --next: #c2410c; --done: #64657c; --done-ok: oklch(0.55 0.15 150); --redact: rgb(28 29 46 / .14); --field: rgb(28 29 46 / .04); }
 .home a { color: inherit; }
 .home-bg { position: absolute; inset: 0; overflow: hidden; transition: opacity 700ms var(--ease); }
 .home-bg.silk { background: linear-gradient(165deg, #120c2e 0%, #24185a 35%, #3a2580 55%, #1c1446 80%, #0e0a26 100%); opacity: 0; }
