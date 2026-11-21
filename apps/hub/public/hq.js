@@ -2,7 +2,7 @@
 // one ES module so there's no build step. The server sends everything to draw from /api/hq:
 // live briefs, runs, calendar, findings and proposal decisions, plus sample lifestyle content
 // (data.mock). Enabled calendar proposals create events only after owner approval;
-// manual/record-only choices never execute. Priorities, mood and habits are samples. The moniqr console
+// manual/record-only choices never execute. Priorities and habits are samples; mood check-ins are saved. The moniqr console
 // (console.js) opens from a right-click anywhere and talks to a read-only EA run.
 // SOURCES below records which cards are live and which are samples; every card shows a badge.
 import { Component, html, render } from '/vendor/preact-htm.js';
@@ -62,7 +62,7 @@ const SOURCES = {
   agents: { kind: 'sample', from: 'Only the EA exists so far; the other agents are placeholders' },
   pri: { kind: 'sample', from: 'Priorities are not wired to the backlog yet' },
   news: { kind: 'sample', from: 'No news feed is connected' },
-  mood: { kind: 'sample', from: 'Check-ins are not saved anywhere yet' },
+  mood: { kind: 'live', from: 'your check-ins, saved in moniqr' },
   pick: { kind: 'sample', from: 'Daily picks are placeholder content' },
   glance: { kind: 'sample', from: 'No health or fitness data is connected' },
   habits: { kind: 'sample', from: 'Habit ticks are not saved anywhere yet' },
@@ -90,6 +90,10 @@ function src(id, down, extra = '') {
 const readHideSamples = () => { try { return localStorage.getItem('moniqr.hideSamples') === '1'; } catch { return false; } };
 
 const MOODS = ['Low', 'Meh', 'Okay', 'Good', 'Great'];
+const BNE_MS = 10 * 3_600_000;
+/** Brisbane day number and check-in slot (morning before 3pm, evening after) for a time. */
+const checkinSlot = (ms) => ({ day: Math.floor((ms + BNE_MS) / 86_400_000), pm: new Date(ms + BNE_MS).getUTCHours() >= 15 });
+const brisbaneClock = (ms) => { const d = new Date(ms + BNE_MS); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
 const ENERGY = ['Drained', 'Low', 'Steady', 'High', 'Wired'];
 const FOCUS_IDS = ['pri', 'news', 'mood', 'pick'];
 const FOCUS_LABELS = { pri: 'priorities', news: 'news', mood: 'mood', pick: 'daily pick' };
@@ -146,6 +150,9 @@ class App extends Component {
     mood: null,
     energy: null,
     journal: '',
+    checkins: null,
+    checkinId: null,
+    checkinError: '',
     pickN: 0,
     focus: null,
     muted: {},
@@ -164,6 +171,7 @@ class App extends Component {
 
   componentDidMount() {
     this.load();
+    this.loadCheckins();
     this.clock = setInterval(() => this.setState({ now: Date.now() }), 30_000);
     this.onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -386,6 +394,50 @@ class App extends Component {
         </div>
       </div>
     `;
+  }
+
+  /** Loads recent check-ins and picks up the one for this morning or evening, if already logged. */
+  async loadCheckins() {
+    try {
+      const r = await fetch('/api/checkins', { headers: { accept: 'application/json' } });
+      if (!r.ok) throw new Error();
+      const { items } = await r.json();
+      const slot = checkinSlot(Date.now());
+      const cur = items.find((c) => { const s = checkinSlot(Date.parse(c.created_at)); return s.day === slot.day && s.pm === slot.pm; });
+      this.setState(cur ? { checkins: items, checkinId: cur.id, mood: cur.mood, energy: cur.energy, journal: cur.note, checkinError: '' }
+        : { checkins: items, checkinId: null, mood: null, energy: null, journal: '', checkinError: '' });
+    } catch { this.setState({ checkins: this.state.checkins ?? [], checkinError: 'Past check-ins could not be loaded.' }); }
+  }
+
+  /** Saves the current check-in: the first tap of a mood creates it, later changes update it. */
+  async saveCheckin(fields) {
+    let { checkinId } = this.state;
+    // A card left open past 3pm or midnight starts a new check-in rather than changing the earlier one.
+    const cur = (this.state.checkins ?? []).find((c) => c.id === checkinId);
+    if (cur) {
+      const a = checkinSlot(Date.parse(cur.created_at)), b = checkinSlot(Date.now());
+      if (a.day !== b.day || a.pm !== b.pm) { checkinId = null; this.setState({ checkinId: null }); }
+    }
+    if (!checkinId && fields.mood === undefined) return; // energy and notes wait for a mood
+    if (this.checkinSaving) { this.checkinQueued = { ...(this.checkinQueued ?? {}), ...fields }; return; }
+    this.checkinSaving = true;
+    const body = checkinId ? fields : { mood: this.state.mood ?? fields.mood, energy: this.state.energy, note: this.state.journal.trim() };
+    try {
+      const r = await fetch(checkinId ? `/checkins/${checkinId}` : '/checkins', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (r.status === 401) return void location.assign('/login');
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? 'Your check-in could not be saved.');
+      const others = (this.state.checkins ?? []).filter((c) => c.id !== d.item.id);
+      this.setState({ checkinId: d.item.id, checkins: [d.item, ...others], checkinError: '' });
+    } catch (e) {
+      this.setState({ checkinError: e.message || 'Your check-in could not be saved.' });
+    } finally {
+      this.checkinSaving = false;
+      const queued = this.checkinQueued; this.checkinQueued = null;
+      if (queued) this.saveCheckin(queued);
+    }
   }
 
   async loadPersonal(view) {
@@ -1107,21 +1159,41 @@ class App extends Component {
   }
 
   renderMood(v, L) {
-    const { mood, energy } = this.state;
+    const { mood, energy, checkins, checkinId, checkinError } = this.state;
+    const current = (checkins ?? []).find((c) => c.id === checkinId);
+    const moodAt = current ? brisbaneClock(Date.parse(current.created_at)) : '';
     if (L.mini) {
       return html`
-        <div class="between"><span class="fs13 bright" style="font-weight: 500;">Mood</span><span class="fs11 muted nowrap">${mood === null ? 'Not logged' : `Logged ${this.moodAt}`}</span></div>
+        <div class="between"><span class="fs13 bright" style="font-weight: 500;">Mood</span><span class="fs11 muted nowrap">${mood === null ? 'Not logged' : moodAt ? `Logged ${moodAt}` : 'Saving…'}</span></div>
         <span class="fs12 dim clamp2">${mood === null ? 'Tap to do your check-in' : `Feeling ${MOODS[mood].toLowerCase()} today`}</span>
       `;
     }
     const slot = v.hour < 15 ? 'Morning check-in · 1 of 2' : 'Evening check-in · 2 of 2';
     const pickMood = (i) => (e) => {
       e.stopPropagation();
-      this.moodAt = `${pad(v.now.getUTCHours())}:${pad(v.now.getUTCMinutes())}`;
+      if (mood === i && checkinId) return;
       this.setState({ mood: i });
+      this.saveCheckin({ mood: i });
+    };
+    const pickEnergy = (i) => (e) => {
+      e.stopPropagation();
+      const next = energy === i ? null : i;
+      this.setState({ energy: next });
+      this.saveCheckin({ energy: next });
+    };
+    const saveNote = () => {
+      const note = this.state.journal.trim();
+      if (checkinId && note !== (current?.note ?? '')) this.saveCheckin({ note });
     };
     const trendDays = Array.from({ length: 7 }, (_, i) => DOW[(v.todayIdx + i + 1) % 7][0]);
-    const trend = [...v.mock.moodTrend, mood];
+    // Each day's average mood from saved check-ins; today shows what is picked now.
+    const today = checkinSlot(Date.now()).day;
+    const trend = Array.from({ length: 7 }, (_, i) => {
+      const day = today - 6 + i;
+      const all = (checkins ?? []).filter((c) => c.id !== checkinId || i !== 6).filter((c) => checkinSlot(Date.parse(c.created_at)).day === day).map((c) => c.mood);
+      if (i === 6 && mood !== null) all.push(mood);
+      return all.length ? Math.round(all.reduce((a, b) => a + b, 0) / all.length) : null;
+    });
     return html`
       <div class="between">
         <h2 class="card-title">How are you feeling? ${src('mood')}</h2>
@@ -1131,21 +1203,27 @@ class App extends Component {
         ${MOODS.map((label, i) => html`<span style=${choice(mood === i)} onClick=${pickMood(i)}>${label}</span>`)}
       </div>
       <span class="fs12 muted">
-        ${mood === null ? 'Moniqr uses this to pace your day. Evening check-in at 21:00.' : `Logged ${MOODS[mood].toLowerCase()} at ${this.moodAt}. Thanks.`}
+        ${checkinError ? html`<span class="coral">${checkinError}</span>`
+          : mood === null ? 'Saved to your log. Moniqr uses it to pace your day. Evening check-in after 3pm.'
+          : moodAt ? `Logged ${MOODS[mood].toLowerCase()} at ${moodAt}. Tap again to change it.` : 'Saving…'}
       </span>
       ${L.big &&
       html`
         <div class="rule"></div>
         <span class="fs12 muted">Energy</span>
         <div class="moods">
-          ${ENERGY.map((label, i) => html`<span style=${choice(energy === i)} onClick=${() => this.setState({ energy: i })}>${label}</span>`)}
+          ${ENERGY.map((label, i) => html`<span style=${choice(energy === i)} onClick=${pickEnergy(i)}>${label}</span>`)}
         </div>
-        <input class="journal" value=${this.state.journal} onInput=${(e) => this.setState({ journal: e.target.value })} placeholder="Anything on your mind? (optional)" />
+        <input class="journal" value=${this.state.journal} maxlength="2000" onInput=${(e) => this.setState({ journal: e.target.value })}
+          onBlur=${saveNote} onKeyDown=${(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          placeholder=${checkinId ? 'Anything on your mind? (optional, saved with this check-in)' : 'Anything on your mind? (optional)'} />
         <span class="fs12 muted">Last 7 days</span>
         <div class="trend">
           ${trend.map((val, i) => {
             const isToday = i === 6;
-            const bg = isToday
+            const bg = val === null
+              ? 'color-mix(in srgb, var(--n100) 10%, transparent)'
+              : isToday
               ? val === null
                 ? 'color-mix(in srgb, var(--n100) 10%, transparent)'
                 : 'var(--accent-2)'

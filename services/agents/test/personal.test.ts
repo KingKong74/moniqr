@@ -18,6 +18,28 @@ describe('personal backlog and brief settings', { skip: skipReason }, () => {
       assert.equal((await api.call('PUT', '/settings', token, {})).status, 401);
     }
   });
+  test('check-ins are owner-only, validated, editable and visible to the EA', async () => {
+    for (const token of [undefined, RUNNER_TOKEN]) {
+      assert.equal((await api.call('GET', '/checkins', token)).status, 401);
+      assert.equal((await api.call('POST', '/checkins', token, { mood: 2 })).status, 401);
+    }
+    assert.equal((await api.call('POST', '/checkins', API_TOKEN, { mood: 5 })).status, 400);
+    assert.equal((await api.call('POST', '/checkins', API_TOKEN, { mood: 1, extra: true })).status, 400);
+    const created = await api.call('POST', '/checkins', API_TOKEN, { mood: 1 });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.item.energy, null);
+    const id = created.body.item.id;
+    let changed = await api.call('PATCH', `/checkins/${id}`, API_TOKEN, { energy: 3, note: '  Long shift  ' });
+    assert.deepEqual([changed.body.item.mood, changed.body.item.energy, changed.body.item.note], [1, 3, 'Long shift']);
+    changed = await api.call('PATCH', `/checkins/${id}`, API_TOKEN, { mood: 3 });
+    assert.deepEqual([changed.body.item.mood, changed.body.item.energy], [3, 3], 'fields not sent are kept');
+    changed = await api.call('PATCH', `/checkins/${id}`, API_TOKEN, { energy: null });
+    assert.equal(changed.body.item.energy, null);
+    assert.equal((await api.call('PATCH', '/checkins/99999', API_TOKEN, { mood: 1 })).status, 404);
+    assert.equal((await api.call('GET', '/checkins', API_TOKEN)).body.items[0].id, id);
+    const context = await adminContext(pool);
+    assert.equal(context.recent_checkins.items[0].mood, 3);
+  });
   test('seeds chatbot as a task; validates, persists and completes items; EA sees open tasks', async () => {
     const initial = await api.call('GET', '/backlog', API_TOKEN);
     assert.match(initial.body.items[0].title, /chatbot/);

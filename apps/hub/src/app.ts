@@ -216,6 +216,23 @@ export function createApp(opts: HubOptions) {
   const BACKLOG_PATCH = [...BACKLOG_NEW, 'place'] as const;
   app.get('/api/backlog', async (_req, res) => { res.json(await opts.agents.backlog!()); });
   app.get('/api/settings', async (_req, res) => { res.json(await opts.agents.settings!()); });
+  app.get('/api/checkins', async (_req, res) => { res.json(await opts.agents.checkins!()); });
+  // Mood check-ins from the "How are you feeling?" card. JSON only, so energy can be cleared with null.
+  for (const path of ['/checkins', '/checkins/:id']) {
+    app.post(path, express.json({ limit: '8kb' }), async (req, res) => {
+      if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });
+      const id = req.params.id === undefined ? undefined : Number(req.params.id);
+      if (id !== undefined && (!Number.isSafeInteger(id) || id <= 0)) return void res.status(400).json({ error: 'Invalid check-in.' });
+      const b = req.body ?? {};
+      const item = Object.fromEntries((['mood', 'energy', 'note'] as const).filter(k => b[k] !== undefined).map(k => [k, b[k]]));
+      try {
+        res.json(await opts.agents.saveCheckin!(item, id));
+      } catch (err) {
+        if (err instanceof AgentApiError && [400, 404].includes(err.status)) return void res.status(err.status).json({ error: err.message });
+        throw err;
+      }
+    });
+  }
   for (const path of ['/backlog', '/backlog/:id', '/settings']) {
     app.post(path, express.urlencoded({ extended: false, limit: '16kb' }), express.json({ limit: '64kb' }), async (req, res) => {
       if (req.header('origin') !== canonical.origin) return void res.status(403).json({ error: 'Cross-site request refused.' });

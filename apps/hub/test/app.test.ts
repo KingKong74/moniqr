@@ -30,6 +30,8 @@ const agents: AgentsClient = {
   },
   backlog: async () => ({ items: [] }),
   saveBacklog: async (item, id) => { personalWrites.push({ item, id }); return { item: { ...item, id: id ?? 1 } }; },
+  checkins: async () => ({ items: [] }),
+  saveCheckin: async (item, id) => { personalWrites.push({ item, id }); return { item: { id: id ?? 1, mood: 2, energy: null, note: '', created_at: '', updated_at: '', ...item } }; },
   settings: async () => ({ timezone: 'Australia/Brisbane', schedules: [] }),
   saveSettings: async settings => { personalWrites.push(settings); return { timezone: 'Australia/Brisbane', schedules: [] }; },
   calendarAction: async (id, operation, revision) => { calendarOperations.push({ id, operation, revision }); return { id } as any; },
@@ -456,6 +458,22 @@ test('backlog and settings require a session and same-origin writes', async () =
   r = await fetch(base + '/settings', {method:'POST',headers:{...authed,origin:ORIGIN},body:new URLSearchParams({morning:'07:00',afternoon:'16:30',morning_enabled:'on'})});
   assert.equal(r.status, 200);
   assert.deepEqual(personalWrites.at(-1), {morning:'07:00',afternoon:'16:30',morning_enabled:true,afternoon_enabled:false});
+});
+
+test('check-ins need a session and same-origin writes, and pass only mood, energy and note', async () => {
+  assert.equal((await get('/api/checkins')).status, 401);
+  assert.equal((await get('/api/checkins', authed)).status, 200);
+  const post = (path: string, body: unknown, headers: Record<string, string>) => fetch(base + path, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  assert.equal((await post('/checkins', { mood: 2 }, authed)).status, 403);
+  assert.equal((await post('/checkins', { mood: 2 }, { origin: ORIGIN })).status, 401);
+  assert.equal((await post('/checkins/0', { mood: 2 }, { ...authed, origin: ORIGIN })).status, 400);
+  let r = await post('/checkins', { mood: 3, energy: 2, note: 'Fine', id: 5, created_at: 'x' }, { ...authed, origin: ORIGIN });
+  assert.equal(r.status, 200);
+  assert.deepEqual(personalWrites.at(-1), { item: { mood: 3, energy: 2, note: 'Fine' }, id: undefined });
+  r = await post('/checkins/4', { energy: null }, { ...authed, origin: ORIGIN });
+  assert.equal(r.status, 200);
+  assert.deepEqual(personalWrites.at(-1), { item: { energy: null }, id: 4 });
 });
 
 test('the console posts the conversation same-site only and reads the reply back', async () => {

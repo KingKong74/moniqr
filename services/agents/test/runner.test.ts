@@ -208,7 +208,8 @@ describe('runner', { skip: skipReason }, () => {
     assert.doesNotMatch(prompt, /Gmail/);
     assert.match(prompt, /get_daily_admin/);
     assert.match(prompt, /only when confirmed_created is true/);
-    assert.match(prompt, /unpaid only when the email says so/);
+    assert.match(prompt, /paid or unpaid unless the email says so/);
+    assert.match(prompt, /never a manual step to check funds/);
     await finishRun(pool, claimed.run.id, { status: 'failed', error: 'test cleanup' });
   });
 

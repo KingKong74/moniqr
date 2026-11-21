@@ -103,3 +103,38 @@ export async function saveBriefSettings(pool: Pool, body: z.infer<typeof briefSe
   });
   return briefSettings(pool);
 }
+
+// "How are you feeling?" check-ins: mood and energy on a 0-4 scale, plus an optional note.
+const scale = z.number().int().min(0).max(4);
+export const checkinInput = z.object({
+  mood: scale,
+  energy: scale.nullable().default(null),
+  note: z.string().trim().max(2000).default(''),
+}).strict();
+export const checkinPatch = z.object({
+  mood: scale.optional(),
+  energy: scale.nullable().optional(),
+  note: z.string().trim().max(2000).optional(),
+}).strict();
+
+/** Check-ins from the last `days` days, newest first. */
+export async function listCheckins(pool: Pool, days = 30) {
+  const { rows } = await pool.query(`SELECT id, mood, energy, note, created_at, updated_at FROM checkins
+    WHERE created_at >= now() - make_interval(days => $1) ORDER BY created_at DESC, id DESC LIMIT 500`, [days]);
+  return { items: rows };
+}
+
+export async function createCheckin(pool: Pool, c: z.infer<typeof checkinInput>) {
+  const { rows } = await pool.query(`INSERT INTO checkins (mood, energy, note) VALUES ($1,$2,$3)
+    RETURNING id, mood, energy, note, created_at, updated_at`, [c.mood, c.energy, c.note]);
+  return rows[0];
+}
+
+/** Returns null when the check-in does not exist. Energy can be cleared with null. */
+export async function updateCheckin(pool: Pool, id: number, p: z.infer<typeof checkinPatch>) {
+  const { rows } = await pool.query(`UPDATE checkins SET mood = coalesce($2, mood),
+      energy = CASE WHEN $3::boolean THEN $4::smallint ELSE energy END, note = coalesce($5, note), updated_at = now()
+    WHERE id = $1 RETURNING id, mood, energy, note, created_at, updated_at`,
+    [id, p.mood ?? null, p.energy !== undefined, p.energy ?? null, p.note ?? null]);
+  return rows[0] ?? null;
+}

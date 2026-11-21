@@ -142,12 +142,17 @@ export interface ChatStatus {
   reply: string | null; tools: string[]; error: string | null;
 }
 
+export interface Checkin { id: number; mood: number; energy: number | null; note: string; created_at: string; updated_at: string }
+export type CheckinWrite = Partial<Pick<Checkin, 'mood' | 'energy' | 'note'>>;
+
 export interface AgentsClient {
   /** Queue a read-only console reply. 409 while the last message is still being answered. */
   chat?(messages: ChatMessage[]): Promise<{ id: number }>;
   chatStatus?(id: number): Promise<ChatStatus>;
   backlog?(): Promise<{ items: BacklogItem[] }>;
   saveBacklog?(item: BacklogWrite, id?: number): Promise<{ item: BacklogItem }>;
+  checkins?(): Promise<{ items: Checkin[] }>;
+  saveCheckin?(item: CheckinWrite, id?: number): Promise<{ item: Checkin }>;
   settings?(): Promise<BriefSettings>;
   saveSettings?(settings: BriefSettingsInput): Promise<BriefSettings>;
   actions(): Promise<ActionsData>;
@@ -187,6 +192,8 @@ export function agentsClient(baseUrl: string, token: string): AgentsClient {
     chatStatus: (id) => call('GET', `/chat/${id}`),
     backlog: () => call('GET', '/backlog'),
     saveBacklog: (item, id) => call(id ? 'PATCH' : 'POST', id ? `/backlog/${id}` : '/backlog', item),
+    checkins: () => call('GET', '/checkins'),
+    saveCheckin: (item, id) => call(id ? 'PATCH' : 'POST', id ? `/checkins/${id}` : '/checkins', item),
     settings: () => call('GET', '/settings'),
     saveSettings: (settings) => call('PUT', '/settings', settings),
     actions: () => call<ActionsData>('GET', '/actions'),

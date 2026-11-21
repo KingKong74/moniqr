@@ -16,7 +16,8 @@ import { findingInput, scanInput, listFindings, saveFinding, saveScan } from '..
 import { proposalInput, decisionInput, proposeAction, listActions, getAction, decideAction, prepareCalendarAction, addFindingToCalendar, ownerCalendarInput } from '../actions.js';
 import type { CalendarWriter } from '../calendar-writer.js';
 import { executeCalendarAction } from '../calendar-executor.js';
-import { backlogInput, backlogPatch, createBacklogItem, updateBacklogItem, briefSettingsInput, listBacklog, briefSettings, saveBriefSettings } from '../personal.js';
+import { backlogInput, backlogPatch, createBacklogItem, updateBacklogItem, briefSettingsInput, listBacklog, briefSettings, saveBriefSettings,
+  checkinInput, checkinPatch, listCheckins, createCheckin, updateCheckin } from '../personal.js';
 import { adminContext } from '../brief-context.js';
 
 function isValidCron(cron: string): boolean {
@@ -78,6 +79,15 @@ export function createApp(opts: AppOptions) {
   app.patch('/backlog/:id', hub, async (req, res) => {
     const item = await updateBacklogItem(pool, idParam.parse(req.params.id), backlogPatch.parse(req.body));
     if (!item) throw new NotFoundError('Backlog item not found.');
+    res.json({ item });
+  });
+  app.get('/checkins', hub, async (_req, res) => { res.json(await listCheckins(pool)); });
+  app.post('/checkins', hub, async (req, res) => {
+    res.status(201).json({ item: await createCheckin(pool, checkinInput.parse(req.body)) });
+  });
+  app.patch('/checkins/:id', hub, async (req, res) => {
+    const item = await updateCheckin(pool, idParam.parse(req.params.id), checkinPatch.parse(req.body));
+    if (!item) throw new NotFoundError('Check-in not found.');
     res.json({ item });
   });
   app.get('/settings', hub, async (_req, res) => { res.json(await briefSettings(pool)); });
