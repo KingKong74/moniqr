@@ -155,9 +155,16 @@ input::placeholder { color: var(--n500); }
 .nav-item.on { background: var(--wash-8); color: var(--n100); }
 .nav-item.soon { cursor: default; }
 .nav-item.soon:hover { background: transparent; }
-.nav .items { gap: 16px; }
+.nav .items { gap: 18px; }
 .nav-group { gap: 2px; }
-.nav-group-title { padding: 0 10px 4px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+/* Group headings read as labels, not tabs: tiny bold caps with a hairline running off to the right. */
+.nav-group-title { display: flex; align-items: center; gap: 8px; padding: 0 4px 6px; font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--n500); cursor: default; user-select: none; }
+.nav-group-title::after { content: ''; flex: 1; height: 1px; background: var(--wash-8); }
+/* Tabs sit indented on a faint guide line so they visibly belong to their heading. */
+.nav-group > .nav-item { margin-left: 6px; width: calc(100% - 6px); position: relative; }
+.nav-group > .nav-item::before { content: ''; position: absolute; left: -6px; top: 4px; bottom: 4px; width: 2px; border-radius: 1px; background: var(--wash-6); }
+.nav-group > .nav-item.on::before { background: var(--accent); }
 .badge { font-size: 11px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--on-accent); display: flex; align-items: center; justify-content: center; }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .up-next { margin: 0 4px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--n100) 5%, transparent); display: flex; flex-direction: column; gap: 2px; }
@@ -367,6 +374,8 @@ html.cal-full-open, html.cal-full-open body { overflow: hidden; }
   .nav .brand-text, .nav .workforce, .nav .spacer, .nav .up-next { display: none; }
   .nav .items, .nav-group { flex-direction: row !important; gap: 2px; }
   .nav-group-title { display: none; }
+  .nav-group > .nav-item { margin-left: 0; width: auto; }
+  .nav-group > .nav-item::before { display: none; }
   .nav-item { padding: 6px 10px; white-space: nowrap; }
   .topbar { padding: 10px 16px; gap: 12px; flex-wrap: wrap; }
   .topbar .clock { display: none; }
