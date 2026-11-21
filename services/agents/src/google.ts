@@ -133,10 +133,35 @@ export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch
         return (data.items ?? []).filter((e) => e.status !== 'cancelled').map((e) => ({ ...toEvent(cal.name, e), calendarId: cal.id }));
       }),
     );
-    return perCalendar.flat().sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    return pairMarkers(perCalendar.flat()).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   }
 
   return { listCalendars, listEvents };
+}
+
+/**
+ * Bailey marks his HMW day with two zero-length events, "Work (HMW)" at 8:30am and again at 5pm.
+ * Two same-titled markers on one calendar and day become a single block from the first to the
+ * second, titled without the bracketed tag ("Work"); the calendar name still says which job it is.
+ * A lone marker, or three or more, is left as it is.
+ */
+export function pairMarkers(events: CalendarEvent[]): CalendarEvent[] {
+  const groups = new Map<string, CalendarEvent[]>();
+  for (const e of events) {
+    if (e.allDay || !e.start || e.start !== e.end) continue;
+    const key = `${e.calendarId ?? e.calendar}\u0000${e.title}\u0000${e.start.slice(0, 10)}`;
+    groups.set(key, [...(groups.get(key) ?? []), e]);
+  }
+  const drop = new Set<CalendarEvent>();
+  const merged = new Map<CalendarEvent, CalendarEvent>();
+  for (const pair of groups.values()) {
+    if (pair.length !== 2) continue;
+    const [a, b] = [...pair].sort((x, y) => Date.parse(x.start) - Date.parse(y.start)) as [CalendarEvent, CalendarEvent];
+    if (Date.parse(a.start) === Date.parse(b.start)) continue;
+    merged.set(a, { ...a, title: a.title.replace(/\s*\([^)]*\)\s*$/, '') || a.title, end: b.start });
+    drop.add(b);
+  }
+  return events.filter((e) => !drop.has(e)).map((e) => merged.get(e) ?? e);
 }
 
 interface RawEvent {

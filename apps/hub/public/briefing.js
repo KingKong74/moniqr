@@ -28,10 +28,21 @@ const clock = (h) => {
 const span = (mins) => (mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}`);
 const senderName = (s) => (s ?? '').replace(/<[^>]*>/, '').replace(/"/g, '').trim() || s;
 
-/** What is waiting on Bailey: pending proposals first, then new findings, bills before the rest. */
+// House bills at 436 Waterworks Rd are split three ways with Bailey's two housemates.
+const SHARED = { match: /waterworks\s+r(?:oa)?d/i, ways: 3 };
+/** How many ways a bill is split: 3 for the house, otherwise 1. */
+export function shareWays(f) {
+  return [f.subject, f.summary, f.evidence, f.sender].some((t) => SHARED.match.test(t ?? '')) ? SHARED.ways : 1;
+}
+
+/** Finding ids that are bills: money stays out of the main queue and gets its own section. */
+const billIds = (data) => new Set((data.findings?.items ?? []).filter((f) => f.category === 'bill').map((f) => f.id));
+
+/** What is waiting on Bailey, bills aside: pending proposals first, then new findings. */
 export function decisionQueue(data) {
+  const bills = billIds(data);
   const proposals = data.actionsError ? [] : (data.actions?.items ?? [])
-    .filter((a) => a.status === 'pending' && !a.source_snapshot?.demo)
+    .filter((a) => a.status === 'pending' && !a.source_snapshot?.demo && !bills.has(a.finding_id))
     .map((a) => {
       const c = a.proposed_action?.calendar;
       const amount = moneyIn(a.title, a.detail);
@@ -46,7 +57,7 @@ export function decisionQueue(data) {
     });
   const rank = { bill: 0, commitment: 1, reply: 2 };
   const findings = data.findingsError ? [] : (data.findings?.items ?? [])
-    .filter((f) => f.status === 'new')
+    .filter((f) => f.status === 'new' && f.category !== 'bill')
     .sort((a, b) => rank[a.category] - rank[b.category])
     .map((f) => {
       const amount = moneyIn(f.summary, f.subject, f.evidence);
@@ -272,7 +283,12 @@ export function renderBriefing(app, v, src) {
 
   const bills = data.findingsError ? [] : (data.findings?.items ?? []).filter((f) => f.category === 'bill' && f.status !== 'dismissed');
   const billAmounts = bills.map((f) => moneyIn(f.summary, f.subject, f.evidence));
-  const billTotal = billAmounts.reduce((s, n) => s + (n ?? 0), 0);
+  const billShares = bills.map((f, i) => billAmounts[i] === null ? null : Math.round(billAmounts[i] / shareWays(f) * 100) / 100);
+  const billTotal = billShares.reduce((s, n) => s + (n ?? 0), 0);
+  // A pending reminder for a bill sits on its card, not in the main queue.
+  const reminderFor = (f) => (data.actionsError ? [] : data.actions?.items ?? []).find((a) => a.finding_id === f.id && a.status === 'pending' && a.kind === 'calendar_create');
+  const billFinding = (f) => ({ key: `f${f.id}`, kind: 'finding', ref: f });
+  const billProposal = (a) => ({ key: `a${a.id}`, kind: 'proposal', ref: a, canApprove: a.can_approve });
 
   const scan = data.findings?.scan;
   const limits = [
@@ -331,7 +347,7 @@ export function renderBriefing(app, v, src) {
     ${error && html`<p class="coral" role="alert">${error}</p>`}
 
     ${rest.length > 0 && html`<section class="col" style="gap: 10px;">
-      <div class="row" style="align-items: baseline; gap: 10px;"><h2>Then</h2><span class="fs13 muted">proposals first, then email, bills before the rest</span></div>
+      <div class="row" style="align-items: baseline; gap: 10px;"><h2>Then</h2><span class="fs13 muted">proposals first, then email; bills have their own section</span></div>
       <div class="bf-list">
         ${rest.map((n) => html`<div class="bf-row" key=${n.key}>
           <span class=${`bf-dot ${TONE[n.type]}`}></span>
@@ -365,18 +381,33 @@ export function renderBriefing(app, v, src) {
 
     <section class="col" style="gap: 14px;">
       <div class="row" style="align-items: baseline; gap: 10px;">
-        <h2>Bills from your email</h2>
-        ${billTotal > 0 && html`<span class="bf-mono fs13 dim" title="The total of the amounts written in these emails">${dollars(billTotal)}</span>`}
+        <h2>Bills</h2>
+        <span class="fs13 muted">set up to pay · reminders of when they're due</span>
+        <span class="grow"></span>
+        ${billTotal > 0 && html`<span class="bf-mono fs13 dim" title="Your share of the amounts written in these emails">${dollars(billTotal)} your share</span>`}
       </div>
       ${bills.length
-        ? html`<div class="bf-bills">${bills.map((f, i) => html`<div class="bf-bill">
-            <span class="fs12 muted">${f.deadline_text || 'No due date found'}</span>
+        ? html`<div class="bf-bills">${bills.map((f, i) => {
+            const ways = shareWays(f), reminder = reminderFor(f);
+            const r = resolved[reminder ? `a${reminder.id}` : `f${f.id}`];
+            return html`<div class="bf-bill" key=${f.id}>
+            <span class="fs12 muted">${f.deadline_text ? `Due ${f.deadline_text}` : 'No due date found'}</span>
             <div class="row" style="align-items: baseline; justify-content: space-between;">
-              <span class="fs15 bright bf-bill-name">${senderName(f.sender)}</span>
-              ${billAmounts[i] !== null && html`<span class="bf-mono bf-bill-amount">${dollars(billAmounts[i])}</span>`}
+              <span class="fs15 bright bf-bill-name" title=${f.subject}>${senderName(f.sender)}</span>
+              ${billShares[i] !== null && html`<span class="bf-mono bf-bill-amount">${dollars(billShares[i])}</span>`}
             </div>
-            <span class=${`fs12 ${f.status === 'new' ? 'coral' : 'muted'}`}>${f.status === 'new' ? 'Needs a look' : 'Reviewed'}${f.missing_details?.length ? ` · unknown: ${f.missing_details.join(', ')}` : ''}</span>
-          </div>`)}</div>`
+            ${ways > 1 && billAmounts[i] !== null && html`<span class="fs12 dim">Your third of ${dollars(billAmounts[i])}, split ${ways} ways</span>`}
+            ${r ? html`<span class="fs12 bf-ok">✓ ${r.label}</span>`
+              : reminder ? html`<div class="row wrap" style="gap: 6px; padding-top: 4px;">
+                  <button type="button" class="btn sm btn-primary" disabled=${saving} onClick=${() => act(billProposal(reminder), 'primary')}>${reminder.can_approve ? 'Add reminder' : 'Review reminder'}</button>
+                  <button type="button" class="btn sm btn-secondary" disabled=${saving} onClick=${() => act(billProposal(reminder), 'secondary')}>Skip</button>
+                </div>`
+              : f.status === 'new' ? html`<div class="row wrap" style="gap: 6px; padding-top: 4px;">
+                  <button type="button" class="btn sm btn-secondary" disabled=${saving} onClick=${() => act(billFinding(f), 'primary')}>Got it</button>
+                </div>`
+              : html`<span class="fs12 muted">Noted</span>`}
+          </div>`;
+          })}</div>`
         : html`<p class="fs14 muted">${data.findingsError ? 'Email findings could not be loaded.' : 'No bills found in recent email.'}</p>`}
     </section>
 

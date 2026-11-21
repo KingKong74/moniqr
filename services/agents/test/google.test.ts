@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { googleCalendar, googleCredentialsFromEnv } from '../src/google.js';
+import { googleCalendar, googleCredentialsFromEnv, pairMarkers } from '../src/google.js';
 
 const creds = { clientId: 'id', clientSecret: 'secret', refreshToken: 'refresh' };
 
@@ -95,4 +95,18 @@ test('events from every calendar are merged, soonest first, without cancelled on
 test('a revoked refresh token gives a clear error', async () => {
   const cal = googleCalendar(creds, fakeGoogle({}, 400).impl);
   await assert.rejects(cal.listCalendars(), /refresh token may need renewing/);
+});
+
+test('start and end markers on one calendar and day become one block', () => {
+  const m = (start: string, extra = {}) => ({ calendar: 'Work (accounting)', calendarId: 'acc', title: 'Work (HMW)', start, end: start, allDay: false, ...extra });
+  const shift = { calendar: 'Work (woolies)', calendarId: 'ww', title: 'Work', start: '2026-11-23T17:30:00+10:00', end: '2026-11-23T22:30:00+10:00', allDay: false };
+  const out = pairMarkers([
+    m('2026-11-23T17:00:00+10:00', { id: 'end' }), m('2026-11-23T08:30:00+10:00', { id: 'start' }), shift,
+    m('2026-11-24T08:30:00+10:00', { id: 'lone' }),
+  ]);
+  assert.deepEqual(out.map((e) => [e.id ?? e.calendar, e.title, e.start, e.end]), [
+    ['start', 'Work', '2026-11-23T08:30:00+10:00', '2026-11-23T17:00:00+10:00'],
+    ['Work (woolies)', 'Work', '2026-11-23T17:30:00+10:00', '2026-11-23T22:30:00+10:00'],
+    ['lone', 'Work (HMW)', '2026-11-24T08:30:00+10:00', '2026-11-24T08:30:00+10:00'],
+  ]);
 });
