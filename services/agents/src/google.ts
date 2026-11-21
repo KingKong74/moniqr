@@ -44,6 +44,8 @@ export interface CalendarSummary {
   id: string;
   name: string;
   primary: boolean;
+  /** The calendar's colour in Google, as #rrggbb. */
+  color?: string;
 }
 
 export interface CalendarEvent {
@@ -55,6 +57,10 @@ export interface CalendarEvent {
   start: string;
   end: string;
   allDay: boolean;
+  /** Display colour (#rrggbb): the event's own Google colour, else its calendar's. */
+  color?: string;
+  /** The event's calendar colour (#rrggbb), for a legend. */
+  calendarColor?: string;
   location?: string;
   /** Free text from the event. Untrusted. */
   description?: string;
@@ -106,13 +112,14 @@ export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch
   }
 
   async function listCalendars(): Promise<CalendarSummary[]> {
-    const data = await get<{ items?: { id: string; summary?: string; summaryOverride?: string; primary?: boolean; selected?: boolean }[] }>(
+    const data = await get<{ items?: { id: string; summary?: string; summaryOverride?: string; primary?: boolean; selected?: boolean; backgroundColor?: string }[] }>(
       '/users/me/calendarList',
     );
     return (data.items ?? []).map((c) => ({
       id: c.id,
       name: c.summaryOverride ?? c.summary ?? c.id,
       primary: Boolean(c.primary),
+      ...(HEX.test(c.backgroundColor ?? '') ? { color: c.backgroundColor!.toLowerCase() } : {}),
     }));
   }
 
@@ -130,7 +137,7 @@ export function googleCalendar(creds: GoogleCredentials, fetchImpl: typeof fetch
           maxResults: '250',
           timeZone: 'Australia/Brisbane',
         });
-        return (data.items ?? []).filter((e) => e.status !== 'cancelled').map((e) => ({ ...toEvent(cal.name, e), calendarId: cal.id }));
+        return (data.items ?? []).filter((e) => e.status !== 'cancelled').map((e) => ({ ...toEvent(cal.name, e, cal.color), calendarId: cal.id }));
       }),
     );
     return pairMarkers(perCalendar.flat()).sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
@@ -173,9 +180,17 @@ interface RawEvent {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: { self?: boolean; responseStatus?: string }[];
+  colorId?: string;
 }
 
-function toEvent(calendar: string, e: RawEvent): CalendarEvent {
+const HEX = /^#[0-9a-f]{6}$/i;
+/** Google's fixed event colours (colorId 1–11), as shown in the Calendar app. */
+export const EVENT_COLOURS: Record<string, string> = {
+  '1': '#7986cb', '2': '#33b679', '3': '#8e24aa', '4': '#e67c73', '5': '#f6bf26', '6': '#f4511e',
+  '7': '#039be5', '8': '#616161', '9': '#3f51b5', '10': '#0b8043', '11': '#d50000',
+};
+
+function toEvent(calendar: string, e: RawEvent, calendarColour?: string): CalendarEvent {
   const allDay = !e.start?.dateTime;
   const description = e.description?.trim();
   const response = e.attendees?.find((a) => a.self)?.responseStatus;
@@ -186,6 +201,8 @@ function toEvent(calendar: string, e: RawEvent): CalendarEvent {
     start: e.start?.dateTime ?? e.start?.date ?? '',
     end: e.end?.dateTime ?? e.end?.date ?? '',
     allDay,
+    ...((e.colorId && EVENT_COLOURS[e.colorId]) || calendarColour ? { color: (e.colorId && EVENT_COLOURS[e.colorId]) || calendarColour } : {}),
+    ...(calendarColour ? { calendarColor: calendarColour } : {}),
     ...(e.location ? { location: e.location } : {}),
     ...(description
       ? { description: description.length > DESCRIPTION_LIMIT ? `${description.slice(0, DESCRIPTION_LIMIT)}…` : description }

@@ -33,7 +33,19 @@ const hhmm = (h) => {
 // Calendar geometry: the full day at 26px an hour.
 const H0 = 0;
 const H1 = 24;
-const PX = 26;
+const PX_SMALL = 26;
+const PX_FULL = 48;
+
+// Fallback colours for calendars that have no colour from Google, picked by calendar name.
+const CAL_FALLBACK = ['#039be5', '#33b679', '#e67c73', '#8e24aa', '#f6bf26', '#f4511e', '#3f51b5', '#0b8043'];
+const calColour = (event) => {
+  if (/^#[0-9a-f]{6}$/i.test(event.color ?? '')) return event.color;
+  const key = event.calendarId ?? event.calendar ?? '';
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CAL_FALLBACK[h % CAL_FALLBACK.length];
+};
+const colourStyle = (hex) => ({ bg: `color-mix(in srgb, ${hex} 34%, var(--tile))`, border: hex, line: 'solid', fg: 'var(--n100)' });
 const SLIDE_SECONDS = 8;
 const POLL_MS = 5000;
 
@@ -178,6 +190,10 @@ class App extends Component {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         this.searchEl?.focus();
+      }
+      if (e.key === 'Escape' && this.state.calFull) {
+        this.setState({ calFull: false });
+        document.documentElement.classList.remove('cal-full-open');
       }
     };
     window.addEventListener('keydown', this.onKey);
@@ -557,6 +573,8 @@ class App extends Component {
     const originalCalendar = data.calendar ?? { status: 'disconnected', events: [] };
     const layers = calendarLayers(originalCalendar.events, data.actions.items, this.state.showRequests !== false);
     const calendar = { ...originalCalendar, events: layers.events };
+    mock.calendars = [...new Map(calendar.events.filter((e) => e.response !== 'declined')
+      .map((e) => [e.calendarId ?? e.calendar, { name: (e.calendar ?? '').split(' · ')[0] || 'Calendar', colour: calColour({ ...e, color: e.calendarColor ?? (e.calendarId ? undefined : e.color) }) }])).values()];
     for (const event of [...calendar.events, ...layers.requests]) {
       if (event.response === 'declined') continue;
       const start = event.allDay ? Date.parse(event.start + 'T00:00:00+10:00') : Date.parse(event.start);
@@ -565,11 +583,12 @@ class App extends Component {
       for (let day = 0; day < 7; day++) {
         const dayStart = weekStart + day * DAY_MS;
         if (start >= dayStart + DAY_MS || end <= dayStart) continue;
-        if (event.allDay) mock.allDay.push({ day, title: event.title });
+        const colour = event.overlay ? null : calColour(event);
+        if (event.allDay) mock.allDay.push({ day, title: event.title, colour });
         else mock.events.push({
           day, start: (Math.max(start, dayStart) - dayStart) / 3_600_000,
           hours: (Math.min(end, dayStart + DAY_MS) - Math.max(start, dayStart)) / 3_600_000,
-          title: event.title, kind: event.overlay ? 'pend' : 'life', overlay: !!event.overlay, actionId: event.actionId,
+          title: event.title, kind: event.overlay ? 'pend' : 'life', overlay: !!event.overlay, actionId: event.actionId, colour,
           note: [event.calendar, event.location].filter(Boolean).join(' · '),
         });
       }
@@ -1505,6 +1524,8 @@ class App extends Component {
   }
 
   renderCalendar(v) {
+    const full = !!this.state.calFull;
+    const PX = full ? PX_FULL : PX_SMALL;
     const gridH = `${(H1 - H0) * PX}px`;
     const hours = [];
     for (let h = H0 + 1; h < H1; h++) hours.push({ top: `${(h - H0) * PX}px`, label: h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM` });
@@ -1518,17 +1539,24 @@ class App extends Component {
     const layouts = v.week.map((_, day) => calendarDayLayout(events.filter(e => e.day === day)));
     const nowTop = `${(Math.min(Math.max(v.hour, H0), H1) - H0) * PX}px`;
     const swatch = (c) => `background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border === 'transparent' ? c.bg : c.border};`;
+    const styleOf = (e) => e.colour ? colourStyle(e.colour) : EV_STYLE[e.kind];
+    const setFull = (on) => this.setState({ calFull: on }, () => {
+      document.documentElement.classList.toggle('cal-full-open', on);
+      if (on) document.querySelector('#calendar .cal-scroll')?.scrollTo({ top: Math.max(0, (v.hour - 2) * PX_FULL) });
+    });
     const picked = this.state.pick;
     const calendarStatus = this.state.data.calendar?.status ?? 'disconnected';
     return html`
-      <section id="calendar" class="col" style="gap: 12px;">
+      <section id="calendar" class=${`col${full ? ' cal-full' : ''}`} style="gap: 12px;" role=${full ? 'dialog' : null} aria-modal=${full ? 'true' : null} aria-label=${full ? 'Calendar, full screen' : null}>
         <div class="row wrap" style="gap: 10px;">
           <button class="btn btn-secondary" style="border-radius: 18px; padding: 6px 16px;">Today</button>
           <h2 style="font-weight: 400; font-size: 20px;">${title} ${src('calendar', calendarStatus === 'error' ? 'Down' : calendarStatus !== 'connected' ? 'Not connected' : null)}</h2>
           <div style="flex: 1;"></div>
           <div class="row wrap fs12 dim" style="gap: 12px;">
-            ${[EV_STYLE.life, EV_STYLE.pend].map((c) => html`<span class="row nowrap" style="gap: 6px;"><span class="swatch" style=${swatch(c)}></span>${c.label}</span>`)}
+            ${[...(v.mock.calendars ?? []).map((c) => ({ ...colourStyle(c.colour), label: c.name })), EV_STYLE.pend].map((c) => html`<span class="row nowrap" style="gap: 6px;"><span class="swatch" style=${swatch(c)}></span>${c.label}</span>`)}
           </div>
+          <button type="button" class="btn btn-secondary" style="border-radius: 18px; padding: 6px 14px;" autofocus=${full}
+            aria-label=${full ? 'Close full-screen calendar' : 'Open calendar full screen'} onClick=${() => setFull(!full)}>${full ? 'Close' : 'Expand'}</button>
         </div>
         <p class="fs12 muted">${calendarStatus === 'connected'
           ? (events.length || v.mock.allDay.length ? 'Google Calendar + Moniqr requests · Brisbane time' : 'No events this week · Google Calendar · Brisbane time')
@@ -1553,7 +1581,7 @@ class App extends Component {
               <span class="fs10 muted" style="text-align: right; padding: 4px 8px 0 0;">all day</span>
               ${v.week.map(
                 (_, i) => html`<div class="col" style="gap: 2px; padding: 0 3px;">
-                  ${v.mock.allDay.filter((a) => a.day === i).map((a) => html`<span class="all-day-ev">${a.title}</span>`)}
+                  ${v.mock.allDay.filter((a) => a.day === i).map((a) => html`<span class="all-day-ev" title=${a.title} style=${a.colour ? `background: ${a.colour}; color: #fff;` : ''}>${a.title}</span>`)}
                 </div>`,
               )}
             </div>
@@ -1570,7 +1598,7 @@ class App extends Component {
                   ${events
                     .filter((e) => e.day === i)
                     .map((e) => {
-                      const c = EV_STYLE[e.kind];
+                      const c = styleOf(e);
                       const time = `${hhmm(e.start)}–${hhmm(e.start + e.hours)}`;
                       const layout = layouts[i].get(e);
                       const pick = () => e.actionId ? this.openProposal(e.actionId) :
@@ -1588,7 +1616,7 @@ class App extends Component {
                         aria-label=${`${e.overlay ? 'Moniqr request: ' : 'Event: '}${e.title}, ${time}`}
                         title=${`${e.overlay ? 'Moniqr request: ' : ''}${e.title} · ${time}${e.note ? ' · ' + e.note : ''}`}
                         onClick=${pick}
-                        style=${`top: ${(e.start - H0) * PX}px; height: ${Math.max(e.hours * PX - 2, 18)}px; background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border}; color: ${c.fg}; left: ${layout.left}%; width: ${layout.width}%; right: auto;`}
+                        style=${`top: ${(e.start - H0) * PX}px; height: ${Math.max(e.hours * PX - 2, 18)}px; background: ${c.bg}; border-style: ${c.line}; border-color: ${c.border}; ${e.colour ? `border-left: 3px solid ${c.border};` : ''} color: ${c.fg}; left: ${layout.left}%; width: ${layout.width}%; right: auto;`}
                       >
                         <b>${e.title}</b><span>${time}</span>
                       </button>`;

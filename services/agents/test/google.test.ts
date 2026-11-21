@@ -92,6 +92,22 @@ test('events from every calendar are merged, soonest first, without cancelled on
   assert.ok(google.calls.filter((c) => !c.includes('oauth2') && !c.includes('/token')).every((c) => c.startsWith('GET')));
 });
 
+test('events carry their Google colour: the event colour first, else the calendar colour', async () => {
+  const google = fakeGoogle({
+    '/calendar/v3/users/me/calendarList': { items: [{ id: 'main', primary: true, backgroundColor: '#9FC6E7' }, { id: 'plain' }] },
+    '/calendar/v3/calendars/main/events': { items: [
+      { summary: 'Tinted', colorId: '11', start: { dateTime: '2027-01-01T09:00:00+10:00' }, end: { dateTime: '2027-01-01T10:00:00+10:00' } },
+      { summary: 'Calendar coloured', start: { dateTime: '2027-01-01T11:00:00+10:00' }, end: { dateTime: '2027-01-01T12:00:00+10:00' } },
+    ] },
+    '/calendar/v3/calendars/plain/events': { items: [
+      { summary: 'No colour', start: { dateTime: '2027-01-01T13:00:00+10:00' }, end: { dateTime: '2027-01-01T14:00:00+10:00' } },
+    ] },
+  });
+  const events = await googleCalendar(creds, google.impl).listEvents(new Date(), new Date());
+  assert.deepEqual(events.map((e) => [e.title, e.color]), [['Tinted', '#d50000'], ['Calendar coloured', '#9fc6e7'], ['No colour', undefined]]);
+  assert.equal(events[0]!.calendarColor, '#9fc6e7', 'the legend keeps the calendar colour even when an event overrides it');
+});
+
 test('a revoked refresh token gives a clear error', async () => {
   const cal = googleCalendar(creds, fakeGoogle({}, 400).impl);
   await assert.rejects(cal.listCalendars(), /refresh token may need renewing/);

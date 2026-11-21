@@ -261,6 +261,13 @@ input::placeholder { color: var(--n500); }
 .ev span { font-size: 10px; line-height: 1.25; opacity: 0.8; white-space: nowrap; overflow: hidden; }
 .now { position: absolute; left: -4px; right: 0; height: 0; border-top: 2px solid var(--accent-2); }
 .now::before { content: ""; position: absolute; left: -1px; top: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2); }
+/* Full-screen calendar: covers the page, taller hours, the grid scrolls inside. */
+.cal-full { position: fixed; inset: 0; z-index: 60; background: var(--bg); padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); overflow: hidden; }
+.cal-full .cal-scroll { flex: 1; min-height: 0; overflow: auto; }
+.cal-full .cal-row:first-child { position: sticky; top: 0; z-index: 3; background: var(--tile); }
+.cal-full .ev b { font-size: 13px; white-space: normal; }
+.cal-full .ev span { font-size: 11px; }
+html.cal-full-open, html.cal-full-open body { overflow: hidden; }
 .swatch { width: 10px; height: 10px; border-radius: 3px; border-width: 1px; flex-shrink: 0; }
 
 /* — habits — */
